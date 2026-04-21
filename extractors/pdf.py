@@ -8,7 +8,7 @@ BLOCK_TYPE_IMAGE = 1
 
 
 class PDFExtractor:
-    def __init__(self, chunk_size: int = 8_000, overlap_size: int = 1_500):
+    def __init__(self, chunk_size: int, overlap_size: int):
         self.chunk_size = chunk_size
         self.overlap_size = overlap_size
 

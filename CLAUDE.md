@@ -30,3 +30,20 @@ Set PROVIDER and MODEL in config.py. Add your API key to .env (never commit it).
 - Import agents, providers, pipeline, or utils from inside schemas/
 - Call provider APIs outside of providers/
 - Write output paths as raw strings — always use slugify()
+
+## Coding Standards
+1. **Configuration vs. Domain Constants**
+    - `config.py` is the single source of truth for all user-facing settings. It contains three top-level names only:
+        - `PROVIDER` — the active provider string
+        - `MODELS` — a dict mapping provider names to model strings
+        - `PIPELINE` — a dict of runtime tunables (thresholds, limits, batch sizes, flags)
+    - Internal implementation constants (library flags like `BLOCK_TYPE_IMAGE = 1`, HTTP status codes, regex patterns) stay localized at the top of the file that uses them. Do not move them to `config.py`.
+    - If unsure whether a value belongs in `config.py` or local to its file, keep it local. Do not promote it without a clear reason.
+
+2. **Dependency Injection**
+    - Classes must NEVER import config.py — not in methods, not at the top of the file, not anywhere.
+    - Do not use default arguments (like None) for config values in method signatures. Any config value a class requires must be defined as a strictly required parameter (no default) in its __init__ or run method.
+    - The caller is 100% responsible for providing these values at runtime.
+
+3. **Config Ownership**
+    - `cli.py` and `pipeline.py` are the only files that may import `config.py` directly. All other modules receive values through constructor parameters or function arguments.

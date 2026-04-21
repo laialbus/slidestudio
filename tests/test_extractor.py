@@ -136,18 +136,18 @@ def _bold_headers_pdf(tmp_path) -> str:
 
 class TestFigurePlaceholders:
     def test_figure_placeholder_present(self, tmp_path):
-        result = PDFExtractor().extract(_figure_pdf(tmp_path))
+        result = PDFExtractor(chunk_size=8_000, overlap_size=1_500).extract(_figure_pdf(tmp_path))
         text   = " ".join(result["chunks"])
         assert "[FIGURE EXCLUDED:" in text
 
     def test_figure_caption_captured(self, tmp_path):
-        result = PDFExtractor().extract(_figure_pdf(tmp_path))
+        result = PDFExtractor(chunk_size=8_000, overlap_size=1_500).extract(_figure_pdf(tmp_path))
         text   = " ".join(result["chunks"])
         # Caption begins with "Figure", so the extractor should include it.
         assert 'FIGURE EXCLUDED: "Figure 1' in text
 
     def test_body_text_preserved_around_figure(self, tmp_path):
-        result = PDFExtractor().extract(_figure_pdf(tmp_path))
+        result = PDFExtractor(chunk_size=8_000, overlap_size=1_500).extract(_figure_pdf(tmp_path))
         text   = " ".join(result["chunks"])
         assert "Body text that precedes" in text
         assert "More body text that follows" in text
@@ -159,18 +159,18 @@ class TestFigurePlaceholders:
 
 class TestTablePlaceholders:
     def test_table_placeholder_present(self, tmp_path):
-        result = PDFExtractor().extract(_table_pdf(tmp_path))
+        result = PDFExtractor(chunk_size=8_000, overlap_size=1_500).extract(_table_pdf(tmp_path))
         text   = " ".join(result["chunks"])
         assert "[TABLE EXCLUDED:" in text
 
     def test_table_placeholder_includes_column_count(self, tmp_path):
-        result = PDFExtractor().extract(_table_pdf(tmp_path))
+        result = PDFExtractor(chunk_size=8_000, overlap_size=1_500).extract(_table_pdf(tmp_path))
         text   = " ".join(result["chunks"])
         # Our table has 3 columns — the placeholder must state this.
         assert "\u00d7 3 cols" in text   # × 3 cols
 
     def test_outside_text_preserved(self, tmp_path):
-        result = PDFExtractor().extract(_table_pdf(tmp_path))
+        result = PDFExtractor(chunk_size=8_000, overlap_size=1_500).extract(_table_pdf(tmp_path))
         text   = " ".join(result["chunks"])
         assert "Some text outside the table" in text
 
@@ -181,17 +181,17 @@ class TestTablePlaceholders:
 
 class TestBoldOnlyHeaders:
     def test_headers_list_is_non_empty(self, tmp_path):
-        result = PDFExtractor().extract(_bold_headers_pdf(tmp_path))
+        result = PDFExtractor(chunk_size=8_000, overlap_size=1_500).extract(_bold_headers_pdf(tmp_path))
         assert result["headers"], "Expected non-empty headers list for bold-only PDF"
 
     def test_bold_heading_text_detected(self, tmp_path):
-        result  = PDFExtractor().extract(_bold_headers_pdf(tmp_path))
+        result  = PDFExtractor(chunk_size=8_000, overlap_size=1_500).extract(_bold_headers_pdf(tmp_path))
         headers = result["headers"]
         assert any("Introduction" in h for h in headers)
         assert any("Methods" in h for h in headers)
 
     def test_regular_body_not_detected_as_header(self, tmp_path):
-        result  = PDFExtractor().extract(_bold_headers_pdf(tmp_path))
+        result  = PDFExtractor(chunk_size=8_000, overlap_size=1_500).extract(_bold_headers_pdf(tmp_path))
         headers = result["headers"]
         # "paragraph" only appears in regular-weight body text
         assert not any("paragraph" in h.lower() for h in headers)

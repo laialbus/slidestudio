@@ -170,7 +170,9 @@ slidestudio/
   model output token limits.
 - `pipeline.py` contains the router — the decision point that chooses between
   single-deck and multi-deck orchestration after the Analyst completes.
-- `server.py` replaces the naive `open viewer/index.html` instruction.
+- `exporters/html_server.py` replaces the naive `open viewer/index.html` instruction.
+  `cli.py` reads the port from `PIPELINE["port"]` and passes it to
+  `serve_and_open()` as a parameter — `html_server.py` never imports `config.py`.
 - `tests/test_router.py` validates the routing threshold logic.
 - `tests/test_rate_limiter.py` validates the semaphore cap and backoff behaviour.
 - `tests/test_cost_estimator.py` validates token counting accuracy.
@@ -543,8 +545,12 @@ The `--open` flag in the CLI spins up Python's built-in `http.server` on a
 the correct URL. The server shuts itself down after the browser tab is opened,
 or can be left running if the user wants to refresh.
 
+The port is not hardcoded in `html_server.py`. `cli.py` reads `PIPELINE["port"]`
+and passes it to `serve_and_open()` as an argument — `html_server.py` never
+imports `config.py` directly.
+
 ```python
-# server.py
+# html_server.py
 
 import http.server
 import threading
@@ -552,7 +558,7 @@ import webbrowser
 import os
 from pathlib import Path
 
-def serve_and_open(output_file: str, port: int = 7654):
+def serve_and_open(output_file: str, port: int):
     """
     Serves the outputs/ directory on localhost and opens the viewer
     pointing at the specified output file.
@@ -760,7 +766,7 @@ PDF File
     ▼
 ┌─────────────────────────────────────────────────────────┐
 │  Local HTTP Server + Viewer                             │
-│  server.py serves outputs/ on localhost.                │
+│  html_server.py serves outputs/ on localhost.           │
 │  viewer/index.html loads the JSON via http://           │
 │  rather than file:// — no CORS issues.                  │
 └─────────────────────────────────────────────────────────┘
@@ -2042,7 +2048,7 @@ renders the TOC page correctly.
 
 **Milestone 8 — CLI and viewer polished**
 `--estimate`, `--open`, `--fast`, `--debug`, and `--max-concurrent` all work.
-`server.py` serving confirmed in Chrome, Firefox, and Safari for both single
+`html_server.py` serving confirmed in Chrome, Firefox, and Safari for both single
 JSON and index.json modes. A non-developer can follow the README successfully.
 
 **Milestone 9 — Multi-provider support**
