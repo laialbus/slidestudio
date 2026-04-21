@@ -1,0 +1,14 @@
+# Local environment variables
+.env
+venv/
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Output results
+outputs/
+examples/
+
+# pdf files
+pdfs
