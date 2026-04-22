@@ -1,6 +1,6 @@
 # SlideStudio
 
-Agentic pipeline that transforms academic PDFs into reel-style teaching slides.
+Agentic pipeline that transforms academic PDFs into reel-style teaching slides with scrolling mechanism.
 No hosted backend — users run the pipeline locally with their own API key.
 
 ## Architecture
