@@ -40,10 +40,14 @@ Set PROVIDER and MODEL in config.py. Add your API key to .env (never commit it).
     - Internal implementation constants (library flags like `BLOCK_TYPE_IMAGE = 1`, HTTP status codes, regex patterns) stay localized at the top of the file that uses them. Do not move them to `config.py`.
     - If unsure whether a value belongs in `config.py` or local to its file, keep it local. Do not promote it without a clear reason.
 
-2. **Dependency Injection**
-    - Classes must NEVER import config.py — not in methods, not at the top of the file, not anywhere.
-    - Do not use default arguments (like None) for config values in method signatures. Any config value a class requires must be defined as a strictly required parameter (no default) in its __init__ or run method.
-    - The caller is 100% responsible for providing these values at runtime.
+2. **Dependency Injection (Strict)**
+    - Classes must NEVER import `config.py` — not in methods, not at the top of the file, not anywhere.
+    - Do not use default arguments for **config-sourced values** in method signatures. Any value that originates from `config.py` must be a strictly required parameter (no default) in `__init__` or `run()`. The caller is 100% responsible for providing it.
+    - Optional **behavioural flags** — parameters whose `None` value is itself a meaningful instruction rather than a missing config value — may use `= None` as a default. A parameter qualifies as a behavioural flag if:
+        * It changes per-call rather than per-session
+        * `None` produces a distinct, well-defined code path
+        * No entry in `config.py` could ever supply its value
+    - Current example: `Planner.run(scope=None)` — `None` means "full document mode", not "config value was forgotten".
 
 3. **Config Ownership**
     - `cli.py` and `pipeline.py` are the only files that may import `config.py` directly. All other modules receive values through constructor parameters or function arguments.
