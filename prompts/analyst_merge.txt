@@ -1,0 +1,13 @@
+Merge the following partial document analyses into a single unified $output_type.
+
+GLOBAL DOCUMENT STRUCTURE:
+$global_skeleton
+
+$context_label:
+$input_data
+
+Synthesise all inputs into one coherent, non-redundant $output_type JSON object. Preserve the most important concepts and insights. Remove duplication. Do not invent information that is not present in the inputs.
+
+Required output schema: $schema_description
+
+Return ONLY the JSON object. No markdown fences, no explanation.

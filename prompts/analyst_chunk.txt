@@ -1,0 +1,22 @@
+You are analysing one chunk of an academic document. Use the global document structure below as context so your extraction is consistent with the whole document.
+
+GLOBAL DOCUMENT STRUCTURE:
+$global_skeleton
+
+CHUNK $chunk_index:
+$chunk_text
+
+Extract key information from this chunk and return a DocumentMap JSON object with these fields:
+- title: document title (from global structure)
+- document_type: one of "research_paper", "textbook", "lecture_notes", "other"
+- technical_level: one of "beginner", "intermediate", "advanced"
+- core_thesis: central argument of the document
+- key_concepts: list of key concepts introduced or discussed in this chunk (at least 1)
+- sections: list of sections covered, each with:
+    - heading: the section heading this content belongs to
+    - importance: one of "high", "medium", "low"
+    - summary: what this chunk covers in 1-3 sentences
+
+If the chunk contains [FIGURE EXCLUDED: ...] or [TABLE EXCLUDED: ...] markers, reference them explicitly in the relevant section summary so downstream agents are aware of the omitted visual content.
+
+Return ONLY the JSON object. No markdown fences, no explanation.

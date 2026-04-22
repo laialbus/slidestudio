@@ -1,0 +1,15 @@
+Analyse the section headings listed below, which were extracted from an academic document in document order. Produce a GlobalSkeleton JSON object that describes the document's overall architecture.
+
+Section headings:
+$headers
+
+Return a JSON object with these fields:
+- title: the document title inferred from the headings
+- document_type: one of "research_paper", "textbook", "lecture_notes", "other"
+- core_thesis: the central argument or purpose of the document in one sentence (max 400 characters)
+- sections: list of section entries, each with:
+    - heading: exact heading text
+    - level: 1 for chapters / major sections, 2 for sections, 3 for subsections
+    - position: ordinal chunk index where this heading first appears (start at 0, assign sequentially by order)
+
+Return ONLY the JSON object. No markdown fences, no explanation.
