@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import asyncio
+import importlib
+import inspect
 import os
 from pathlib import Path
 from typing import Optional
@@ -17,7 +19,7 @@ from agents.refiner import RefinerAgent
 from agents.writer import WriterAgent
 from extractors.pdf import PDFExtractor
 from pipeline import route
-from providers.anthropic import AnthropicProvider
+from providers.base import BaseProvider
 from schemas.global_skeleton import GlobalSkeleton, SectionEntry
 from utils.cost_estimator import analyze_pdf_cost
 
@@ -25,17 +27,63 @@ load_dotenv()
 
 app = typer.Typer()
 
-# need a modular way to register providers without hardcoding.
-_PROVIDER_REGISTRY: dict[str, type] = {
-    "anthropic": AnthropicProvider,
+
+# ──────────────────────────────────────────────────────────────
+# Provider discovery
+#
+# config.MODELS is the single source of truth for which providers exist.
+# For each key we:
+#   1. Strip any "-variant" suffix (e.g. "google-fast" → "google") to get the
+#      module name, since variants share an implementation and differ only in
+#      model string.
+#   2. Import providers.<base>.
+#   3. Pick the lone BaseProvider subclass DEFINED in that module.
+#
+# A key is silently skipped if its SDK is missing or the module is a stub with
+# no subclass yet. Adding a provider = add to config.MODELS + create the module.
+# ──────────────────────────────────────────────────────────────
+
+def _discover_provider_class(provider_key: str) -> type[BaseProvider] | None:
+    base = provider_key.split("-")[0]
+    try:
+        module = importlib.import_module(f"providers.{base}")
+    except ImportError:
+        return None
+    for _, cls in inspect.getmembers(module, inspect.isclass):
+        if (
+            cls.__module__ == module.__name__
+            and issubclass(cls, BaseProvider)
+            and cls is not BaseProvider
+        ):
+            return cls
+    return None
+
+
+_PROVIDER_REGISTRY: dict[str, type[BaseProvider]] = {
+    key: cls
+    for key in config.MODELS
+    if (cls := _discover_provider_class(key)) is not None
 }
 
-try:
-    from providers.google import GoogleProvider
-    _PROVIDER_REGISTRY["google"] = GoogleProvider
-    _PROVIDER_REGISTRY["google-fast"] = GoogleProvider
-except ImportError:
-    pass
+
+def _resolve_api_key(provider_key: str) -> str:
+    # Variants share an env var with their base ("google-fast" uses GOOGLE_API_KEY).
+    base = provider_key.split("-")[0].upper()
+    return os.environ.get(f"{base}_API_KEY", "")
+
+
+def _resolve_provider_class(provider_key: str) -> type[BaseProvider]:
+    try:
+        return _PROVIDER_REGISTRY[provider_key]
+    except KeyError as e:
+        available = ", ".join(sorted(_PROVIDER_REGISTRY)) or "<none>"
+        rprint(
+            f"[red]Provider {provider_key!r} is not available.[/red]\n"
+            f"Registered providers: {available}\n"
+            f"If you expected {provider_key!r} to work, ensure its SDK is installed "
+            f"and providers/{provider_key.split('-')[0]}.py defines a BaseProvider subclass."
+        )
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -46,43 +94,42 @@ def main(
     fast: bool = False,
     debug: bool = False,
     max_concurrent: Optional[int] = typer.Option(None, "--max-concurrent"),
+    provider: Optional[str] = typer.Option(None, "--provider", help="Override config.PROVIDER"),
 ):
+    provider_key = provider or config.PROVIDER
+    model_name   = config.MODELS[provider_key]
+
     if estimate:
         extractor = PDFExtractor(
             chunk_size=config.PIPELINE["chunk_size"],
             overlap_size=config.PIPELINE["overlap_size"],
         )
         extraction = extractor.extract(pdf_path)
-        result = analyze_pdf_cost(
-            extraction,
-            config.PROVIDER,
-            config.MODELS[config.PROVIDER],
-        )
-        rprint(result)
+        rprint(analyze_pdf_cost(extraction, provider_key, model_name))
         raise typer.Exit()
 
     _max_concurrent = max_concurrent if max_concurrent is not None else config.PIPELINE["max_concurrent"]
     max_cycles = 0 if fast else config.PIPELINE["max_review_cycles"]
     effective_debug = debug or config.PIPELINE["debug"]
 
-    provider_cls = _PROVIDER_REGISTRY[config.PROVIDER]
-    provider = provider_cls(
-        provider_name=config.PROVIDER,
-        model=config.MODELS[config.PROVIDER],
-        api_key=os.environ.get(f"{config.PROVIDER.upper()}_API_KEY", ""),
+    provider_cls = _resolve_provider_class(provider_key)
+    provider_instance = provider_cls(
+        provider_name=provider_key,
+        model=model_name,
+        api_key=_resolve_api_key(provider_key),
         max_concurrent=_max_concurrent,
         max_format_retries=config.PIPELINE["max_format_retries"],
         max_rate_limit_retries=6,
     )
     agents = {
-        "planner": PlannerAgent(provider),
-        "writer":  WriterAgent(provider, writer_batch_size=config.PIPELINE["writer_batch_size"]),
-        "critic":  CriticAgent(provider),
-        "refiner": RefinerAgent(provider),
+        "planner": PlannerAgent(provider_instance),
+        "writer":  WriterAgent(provider_instance, writer_batch_size=config.PIPELINE["writer_batch_size"]),
+        "critic":  CriticAgent(provider_instance),
+        "refiner": RefinerAgent(provider_instance),
     }
 
     result, issues, output_path = asyncio.run(
-        _run_pipeline(pdf_path, provider, agents, max_cycles, effective_debug)
+        _run_pipeline(pdf_path, provider_instance, agents, max_cycles, effective_debug)
     )
 
     if issues:

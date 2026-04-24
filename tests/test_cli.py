@@ -140,7 +140,7 @@ class TestRunFlags:
         with patch("cli.PDFExtractor") as mock_extractor, \
              patch("cli.AnalystAgent") as mock_analyst, \
              patch("cli.route", mock_route), \
-             patch.dict("cli._PROVIDER_REGISTRY", {"anthropic": mock_provider_cls}):
+             patch.dict("cli._PROVIDER_REGISTRY", {"anthropic": mock_provider_cls}):    # requires config.PROVIDER to be "anthropic" for this test
             mock_extractor.return_value.extract.return_value = self._mock_extraction()
             mock_analyst.return_value.run = AsyncMock(return_value=self._mock_doc_map())
             runner.invoke(app, ["dummy.pdf", "--max-concurrent", "10"])
