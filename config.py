@@ -1,10 +1,12 @@
-PROVIDER = "anthropic"
+PROVIDER = "google-fast"  # Options: "anthropic", "openai", "groq", "ollama", "google", "google-fast"
 
 MODELS = {
-    "anthropic": "claude-sonnet-4-20250514",
-    "openai":    "gpt-4o",
-    "groq":      "llama-3.1-70b-versatile",
-    "ollama":    "llama3.1",
+    "anthropic":   "claude-sonnet-4-20250514",
+    "openai":      "gpt-4o",
+    "groq":        "llama-3.1-70b-versatile",
+    "ollama":      "llama3.1",
+    "google":      "gemini-3.1-flash-lite-preview",
+    "google-fast": "gemini-2.0-flash",
 }
 
 PIPELINE = {

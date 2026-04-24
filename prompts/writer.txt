@@ -1,0 +1,22 @@
+You are writing teaching slides for an academic document. Use ONLY the source text provided — do not invent content or summarise from memory.
+
+DOCUMENT MAP (for context and terminology):
+$doc_map
+
+BATCH SLIDE PLAN:
+$batch_plan
+
+SOURCE TEXT (only the chunks referenced by this batch):
+$source_text
+
+For each slide in the batch plan, produce a DraftSlide. Return a SlidesDraft JSON object with:
+- title: concise deck title
+- slides: list of DraftSlide objects, each with:
+  - index: slide number matching the batch plan
+  - title: a clear, informative slide title
+  - bullets: 2–5 concise bullet points grounded ONLY in the source text (at least 1 required)
+  - tag: the slide tag from the batch plan
+
+Every bullet point must be directly traceable to a claim in the source text. Do not add information not present there.
+
+Return ONLY the JSON object. No markdown fences, no explanation.

@@ -1,0 +1,20 @@
+You are a slide quality refiner. Rewrite ONLY the flagged slides listed below to fix the identified issues. Do not rewrite slides that were not flagged.
+
+Document Map (for accuracy reference):
+$doc_map
+
+Flagged Slides (rewrite these only):
+$flagged_slides
+
+Issues to Fix:
+$critiques
+
+Rewrite each flagged slide to address its specific issues. Keep the same index. Return a SlidesDraft containing ONLY the rewritten slides — the same indices as the flagged input.
+
+Return a JSON object matching the SlidesDraft schema:
+{
+  "title": "<same title as input>",
+  "slides": [
+    {"index": <same as flagged input>, "title": "...", "bullets": ["...", "..."], "tag": "..."}
+  ]
+}

@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SlideStudio</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0d1117;
+      --surface:    #161b22;
+      --border:     #30363d;
+      --text:       #e6edf3;
+      --muted:      #7d8590;
+      --accent:     #4f9cf9;
+      --accent-dim: #112240;
+      --radius:     12px;
+      --ease:       0.22s ease;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ─────────────────────────────── */
+    header {
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .logo   { font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: 0.04em; }
+    .htitle { font-size: 14px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Main ───────────────────────────────── */
+    main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    /* ── State message ──────────────────────── */
+    .state-msg { color: var(--muted); font-size: 15px; text-align: center; }
+
+    /* ── TOC ────────────────────────────────── */
+    .toc { width: 100%; max-width: 900px; }
+    .toc-heading {
+      font-size: clamp(22px, 4vw, 32px);
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 6px;
+    }
+    .toc-sub {
+      color: var(--muted);
+      text-align: center;
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+    .toc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 14px;
+    }
+    .toc-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 18px;
+      cursor: pointer;
+      transition: border-color var(--ease), background var(--ease), transform var(--ease), box-shadow var(--ease);
+      user-select: none;
+    }
+    .toc-card:hover {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+      transform: translateY(-3px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .toc-num   { font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+    .toc-label { font-size: 15px; font-weight: 600; line-height: 1.4; }
+
+    /* ── Slide reel ─────────────────────────── */
+    .reel { width: 100%; max-width: 1060px; display: flex; flex-direction: column; gap: 20px; }
+
+    .progress-bar  { width: 100%; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width var(--ease); }
+
+    .slide-box {
+      width: 100%;
+      position: relative;
+      padding-top: 56.25%; /* 16:9 */
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: clamp(28px, 5%, 60px) clamp(32px, 6%, 72px);
+      opacity: 0;
+      transition: opacity var(--ease);
+      pointer-events: none;
+    }
+    .slide.active { opacity: 1; pointer-events: auto; }
+
+    .slide-tag {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 14px;
+    }
+    .slide-title {
+      font-size: clamp(20px, 3vw, 34px);
+      font-weight: 700;
+      line-height: 1.2;
+      margin-bottom: 22px;
+    }
+    .slide-bullets { list-style: none; display: flex; flex-direction: column; gap: 11px; }
+    .slide-bullets li {
+      font-size: clamp(13px, 1.6vw, 17px);
+      line-height: 1.55;
+      color: #c9d1d9;
+      padding-left: 22px;
+      position: relative;
+    }
+    .slide-bullets li::before {
+      content: '›';
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+      font-size: 1.3em;
+      line-height: 1.3;
+    }
+
+    /* ── Controls ───────────────────────────── */
+    .controls { display: flex; align-items: center; gap: 12px; }
+    .btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 18px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color var(--ease), background var(--ease);
+      white-space: nowrap;
+    }
+    .btn:hover          { border-color: var(--accent); background: var(--accent-dim); }
+    .btn:disabled       { opacity: 0.3; cursor: default; }
+    .btn:disabled:hover { border-color: var(--border); background: var(--surface); }
+    .btn-back           { color: var(--muted); margin-right: auto; }
+    .counter            { font-size: 13px; color: var(--muted); min-width: 56px; text-align: center; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="logo">SlideStudio</span>
+    <span class="htitle" id="htitle"></span>
+  </header>
+
+  <main>
+    <p class="state-msg" id="msg">Loading…</p>
+
+    <!-- Table of Contents (multi-deck) -->
+    <div class="toc hidden" id="toc">
+      <h1 class="toc-heading" id="toc-heading"></h1>
+      <p  class="toc-sub"     id="toc-sub"></p>
+      <div class="toc-grid"   id="toc-grid"></div>
+    </div>
+
+    <!-- Slide Reel -->
+    <div class="reel hidden" id="reel">
+      <div class="progress-bar"><div class="progress-fill" id="pfill"></div></div>
+      <div class="slide-box"  id="sbox"></div>
+      <div class="controls">
+        <button class="btn btn-back hidden" id="btn-back">← Back</button>
+        <button class="btn" id="btn-prev" disabled>← Prev</button>
+        <span   class="counter"           id="counter"></span>
+        <button class="btn" id="btn-next">Next →</button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const FILE = new URLSearchParams(location.search).get('file');
+
+    let slides = [], idx = 0;
+
+    /* ─── bootstrap ──────────────────────────── */
+    async function init() {
+      if (!FILE) { $('msg').textContent = 'No ?file= parameter in URL.'; return; }
+      try {
+        const data = await load(FILE);
+        $('msg').classList.add('hidden');
+        $('htitle').textContent = data.title || '';
+        data.type === 'multi_deck' ? showTOC(data) : showReel(data.slides);
+      } catch (e) {
+        $('msg').textContent = 'Failed to load: ' + e.message;
+      }
+    }
+
+    async function load(url) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }
+
+    /* ─── TOC ────────────────────────────────── */
+    function showTOC(data) {
+      $('toc-heading').textContent = data.title;
+      $('toc-sub').textContent = data.decks.length + ' chapter' + (data.decks.length !== 1 ? 's' : '') + ' — click to open';
+      const base = FILE.substring(0, FILE.lastIndexOf('/') + 1);
+      const grid = $('toc-grid');
+      grid.innerHTML = '';
+      data.decks.forEach((d, i) => {
+        const c = document.createElement('div');
+        c.className = 'toc-card';
+        c.innerHTML = '<div class="toc-num">Chapter ' + (i + 1) + '</div><div class="toc-label">' + esc(d.chapter_title) + '</div>';
+        c.addEventListener('click', () => openChapter(base + d.file));
+        grid.appendChild(c);
+      });
+      $('toc').classList.remove('hidden');
+    }
+
+    async function openChapter(url) {
+      try {
+        const data = await load(url);
+        $('toc').classList.add('hidden');
+        $('btn-back').classList.remove('hidden');
+        showReel(data.slides);
+      } catch (e) { alert('Could not load chapter: ' + e.message); }
+    }
+
+    /* ─── Reel ───────────────────────────────── */
+    function showReel(data) {
+      slides = data; idx = 0;
+      const box = $('sbox');
+      box.innerHTML = '';
+      data.forEach((s, i) => {
+        const d = document.createElement('div');
+        d.className = 'slide' + (i === 0 ? ' active' : '');
+        d.innerHTML =
+          '<div class="slide-tag">'    + esc(s.tag || '') + '</div>' +
+          '<h2 class="slide-title">'   + esc(s.title)     + '</h2>'  +
+          '<ul class="slide-bullets">' + s.bullets.map(b => '<li>' + esc(b) + '</li>').join('') + '</ul>';
+        box.appendChild(d);
+      });
+      $('reel').classList.remove('hidden');
+      sync();
+    }
+
+    function goTo(n) {
+      const all = $('sbox').querySelectorAll('.slide');
+      if (n < 0 || n >= all.length) return;
+      all[idx].classList.remove('active');
+      idx = n;
+      all[idx].classList.add('active');
+      sync();
+    }
+
+    function sync() {
+      const t = slides.length;
+      $('counter').textContent = (idx + 1) + ' / ' + t;
+      $('btn-prev').disabled   = idx === 0;
+      $('btn-next').disabled   = idx === t - 1;
+      $('pfill').style.width   = ((idx + 1) / t * 100) + '%';
+    }
+
+    function esc(s) {
+      return String(s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    /* ─── Events ─────────────────────────────── */
+    $('btn-prev').addEventListener('click', () => goTo(idx - 1));
+    $('btn-next').addEventListener('click', () => goTo(idx + 1));
+    $('btn-back').addEventListener('click', () => {
+      $('reel').classList.add('hidden');
+      $('btn-back').classList.add('hidden');
+      $('toc').classList.remove('hidden');
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'ArrowLeft')  goTo(idx - 1);
+      if (e.key === 'ArrowRight') goTo(idx + 1);
+    });
+
+    init();
+  </script>
+</body>
+</html>
