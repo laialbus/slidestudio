@@ -13,17 +13,24 @@ import pytest
 
 from providers.anthropic import AnthropicProvider
 from providers.base import RateLimitError
+from providers.config import ProviderConfig
 
 
 def _make_provider() -> AnthropicProvider:
     with patch("anthropic.AsyncAnthropic"):
         return AnthropicProvider(
-            provider_name="anthropic",
-            model="claude-sonnet-4-20250514",
+            config=ProviderConfig(
+                model="claude-sonnet-4-20250514",
+                max_concurrent=5,
+                max_format_retries=1,
+                max_rate_limit_retries=1,
+                request_timeout=5,
+                circuit_breaker_threshold=3,
+                circuit_breaker_cooldown=60,
+                backoff_wait_min=0,
+                backoff_wait_max=0,
+            ),
             api_key="test-key",
-            max_concurrent=5,
-            max_format_retries=1,
-            max_rate_limit_retries=1,
         )
 
 
@@ -46,30 +53,24 @@ class TestAnthropicProviderConstruction:
     def test_model_stored_on_instance(self):
         with patch("anthropic.AsyncAnthropic"):
             provider = AnthropicProvider(
-                provider_name="anthropic",
-                model="claude-opus-4-20250514",
+                config=ProviderConfig(
+                    model="claude-opus-4-20250514",
+                    max_concurrent=5,
+                    max_format_retries=3,
+                    max_rate_limit_retries=6,
+                    request_timeout=5,
+                    circuit_breaker_threshold=3,
+                    circuit_breaker_cooldown=60,
+                    backoff_wait_min=0,
+                    backoff_wait_max=0,
+                ),
                 api_key="key",
-                max_concurrent=5,
-                max_format_retries=3,
-                max_rate_limit_retries=6,
             )
         assert provider.model == "claude-opus-4-20250514"
 
     def test_name_property_returns_anthropic(self):
         provider = _make_provider()
         assert provider.name == "anthropic"
-
-    def test_provider_name_stored(self):
-        with patch("anthropic.AsyncAnthropic"):
-            provider = AnthropicProvider(
-                provider_name="anthropic",
-                model="claude-sonnet-4-20250514",
-                api_key="key",
-                max_concurrent=None,
-                max_format_retries=3,
-                max_rate_limit_retries=6,
-            )
-        assert provider.provider_name == "anthropic"
 
 
 # ──────────────────────────────────────────────────────────────
@@ -86,12 +87,18 @@ class TestRateLimitHandling:
                     side_effect=_make_rate_limit_exc()
                 )
                 provider = AnthropicProvider(
-                    provider_name="anthropic",
-                    model="claude-sonnet-4-20250514",
+                    config=ProviderConfig(
+                        model="claude-sonnet-4-20250514",
+                        max_concurrent=5,
+                        max_format_retries=1,
+                        max_rate_limit_retries=1,
+                        request_timeout=5,
+                        circuit_breaker_threshold=3,
+                        circuit_breaker_cooldown=60,
+                        backoff_wait_min=0,
+                        backoff_wait_max=0,
+                    ),
                     api_key="test-key",
-                    max_concurrent=5,
-                    max_format_retries=1,
-                    max_rate_limit_retries=1,
                 )
                 with pytest.raises(RateLimitError):
                     await provider._call([{"role": "user", "content": "test"}], "")
@@ -107,12 +114,18 @@ class TestRateLimitHandling:
                     side_effect=_make_rate_limit_exc()
                 )
                 provider = AnthropicProvider(
-                    provider_name="anthropic",
-                    model="claude-sonnet-4-20250514",
+                    config=ProviderConfig(
+                        model="claude-sonnet-4-20250514",
+                        max_concurrent=5,
+                        max_format_retries=1,
+                        max_rate_limit_retries=1,
+                        request_timeout=5,
+                        circuit_breaker_threshold=3,
+                        circuit_breaker_cooldown=60,
+                        backoff_wait_min=0,
+                        backoff_wait_max=0,
+                    ),
                     api_key="test-key",
-                    max_concurrent=5,
-                    max_format_retries=1,
-                    max_rate_limit_retries=1,
                 )
                 try:
                     await provider._call([{"role": "user", "content": "test"}], "")
@@ -135,12 +148,18 @@ class TestRateLimitHandling:
                 mock_client.messages.create = AsyncMock(return_value=mock_response)
 
                 provider = AnthropicProvider(
-                    provider_name="anthropic",
-                    model="claude-sonnet-4-20250514",
+                    config=ProviderConfig(
+                        model="claude-sonnet-4-20250514",
+                        max_concurrent=5,
+                        max_format_retries=1,
+                        max_rate_limit_retries=1,
+                        request_timeout=5,
+                        circuit_breaker_threshold=3,
+                        circuit_breaker_cooldown=60,
+                        backoff_wait_min=0,
+                        backoff_wait_max=0,
+                    ),
                     api_key="test-key",
-                    max_concurrent=5,
-                    max_format_retries=1,
-                    max_rate_limit_retries=1,
                 )
                 result = await provider._call([{"role": "user", "content": "test"}], "")
                 assert result == '{"result": "ok"}'
@@ -160,12 +179,18 @@ class TestRateLimitHandling:
                 mock_client.messages.create = AsyncMock(return_value=mock_response)
 
                 provider = AnthropicProvider(
-                    provider_name="anthropic",
-                    model="claude-opus-4-20250514",
+                    config=ProviderConfig(
+                        model="claude-opus-4-20250514",
+                        max_concurrent=5,
+                        max_format_retries=1,
+                        max_rate_limit_retries=1,
+                        request_timeout=5,
+                        circuit_breaker_threshold=3,
+                        circuit_breaker_cooldown=60,
+                        backoff_wait_min=0,
+                        backoff_wait_max=0,
+                    ),
                     api_key="test-key",
-                    max_concurrent=5,
-                    max_format_retries=1,
-                    max_rate_limit_retries=1,
                 )
                 await provider._call([{"role": "user", "content": "test"}], "system prompt")
 

@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from agents.critic import CriticAgent
 from providers.base import BaseProvider
+from providers.config import ProviderConfig
 from schemas.critique import Critique, Issue, SlideReview
 from schemas.document_map import DocumentMap, Section
 from schemas.slides_draft import DraftSlide, SlidesDraft
@@ -21,7 +22,7 @@ from schemas.slides_draft import DraftSlide, SlidesDraft
 
 class StubProvider(BaseProvider):
     def __init__(self, responses: dict[type, list]):
-        super().__init__("stub", 5, 3, 1)
+        super().__init__(ProviderConfig(model="stub", max_concurrent=5, max_format_retries=3, max_rate_limit_retries=1, request_timeout=5, circuit_breaker_threshold=3, circuit_breaker_cooldown=60, backoff_wait_min=0, backoff_wait_max=0))
         self._responses = {k: list(v) for k, v in responses.items()}
         self._indices: dict[type, int] = {}
         self.received_prompts: list[tuple[type, str]] = []
@@ -35,7 +36,7 @@ class StubProvider(BaseProvider):
         items = self._responses[schema]
         return items[idx % len(items)]
 
-    async def _call(self, messages: list, system: str) -> str:
+    async def _call(self, messages: list, system: str, response_schema=None) -> str:
         raise NotImplementedError
 
     @property

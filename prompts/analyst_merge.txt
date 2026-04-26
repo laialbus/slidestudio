@@ -10,4 +10,4 @@ Synthesise all inputs into one coherent, non-redundant $output_type JSON object.
 
 Required output schema: $schema_description
 
-Return ONLY the JSON object. No markdown fences, no explanation.
+Return a single JSON object. Do not wrap the result in an array. No markdown fences, no explanation.

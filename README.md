@@ -43,38 +43,76 @@ ANTHROPIC_API_KEY=sk-ant-...
 ### 5. Run on any PDF
 
 ```bash
-python cli.py path/to/your/paper.pdf --open
+python cli.py run path/to/your/paper.pdf --open
 ```
 
 Slides are generated and opened in your browser automatically.
 
 ---
 
-## CLI Flags
+## CLI Subcommands
+
+SlideStudio exposes three subcommands. Run `python cli.py --help` to list them.
+
+### `run` — generate slides
+
+```bash
+python cli.py run paper.pdf
+```
 
 | Flag | Description |
 |------|-------------|
-| *(none)* | Generate slides and save to `outputs/` |
-| `--estimate` | Dry-run only — print estimated token usage and cost without making any API calls |
+| `--open` | Serve `outputs/` on localhost and open the viewer in your browser after generation |
 | `--fast` | Skip the Critic/Refiner review loop entirely; faster but lower quality |
 | `--debug` | Write all intermediate agent outputs (plan, draft, critique) to `outputs/debug/` for inspection |
-| `--open` | Serve `outputs/` on localhost and open the viewer in your browser after generation |
+| `--resume` | Load completed stages from the checkpoint cache and continue from the last completed step |
+| `--force` | Ignore the checkpoint cache and run fresh, overwriting any cached stages |
 | `--max-concurrent N` | Override the default concurrency limit (default: 5 for cloud providers, 1 for Ollama) |
+| `--provider NAME` | Override the provider set in `config.py` (e.g. `anthropic`, `openai`) |
 
-### Examples
+#### Examples
 
 ```bash
-# Estimate cost before spending any money
-python cli.py paper.pdf --estimate
-
 # Full run with browser viewer
-python cli.py paper.pdf --open
+python cli.py run paper.pdf --open
 
 # Fast run without review cycle
-python cli.py paper.pdf --fast --open
+python cli.py run paper.pdf --fast --open
+
+# Resume a run that was interrupted
+python cli.py run paper.pdf --resume
 
 # Debug intermediate outputs
-python cli.py paper.pdf --debug
+python cli.py run paper.pdf --debug
+```
+
+### `estimate` — dry-run cost estimate
+
+Runs PDF extraction locally and prints the anticipated token usage and cost. No API calls are made.
+
+```bash
+python cli.py estimate paper.pdf
+```
+
+#### Example output
+
+```
+{'mode': 'single-deck', 'decks': 1, 'api_calls': 8, 'input_tokens': 12400, ...}
+```
+
+### `serve` — open viewer for an existing output
+
+Opens the browser viewer for a previously generated output without re-running the pipeline. Useful for re-inspecting results or sharing a deck after the fact.
+
+```bash
+python cli.py serve paper.pdf
+```
+
+If no output exists for the given PDF, prints a clear error and exits:
+
+```
+No output found for 'paper.pdf'.
+Run `python cli.py run paper.pdf` first to generate slides.
 ```
 
 ---

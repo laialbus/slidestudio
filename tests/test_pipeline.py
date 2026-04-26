@@ -169,8 +169,8 @@ class TestRoute:
         skeleton = _skeleton_with_chapters(3)
         result, _, _ = _run(route(
             "Test Paper", skeleton, _doc_map(), ["chunk"],
-            _agents(), multi_deck_threshold=3, max_review_cycles=1,
-            debug=False, output_dir=tmp_path,
+            _agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
+            total_chars=50_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
         assert isinstance(result, SlidesFinal)
 
@@ -178,8 +178,8 @@ class TestRoute:
         skeleton = _skeleton_with_chapters(2)
         result, _, _ = _run(route(
             "Test Paper", skeleton, _doc_map(), ["chunk"],
-            _agents(), multi_deck_threshold=3, max_review_cycles=1,
-            debug=False, output_dir=tmp_path,
+            _agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
+            total_chars=50_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
         assert isinstance(result, SlidesFinal)
 
@@ -187,8 +187,8 @@ class TestRoute:
         skeleton = _skeleton_with_chapters(4)
         result, _, _ = _run(route(
             "Test Paper", skeleton, _doc_map(), ["chunk"],
-            _agents(), multi_deck_threshold=3, max_review_cycles=1,
-            debug=False, output_dir=tmp_path,
+            _agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
+            total_chars=50_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
         assert isinstance(result, DeckIndex)
 
@@ -197,8 +197,8 @@ class TestRoute:
         skeleton = _skeleton_with_chapters(3)
         result, _, _ = _run(route(
             "Test Paper", skeleton, _doc_map(), ["chunk"],
-            _agents(), multi_deck_threshold=3, max_review_cycles=1,
-            debug=False, output_dir=tmp_path,
+            _agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
+            total_chars=50_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
         assert isinstance(result, SlidesFinal)
 
@@ -206,8 +206,8 @@ class TestRoute:
         skeleton = _skeleton_with_chapters(4)
         result, _, _ = _run(route(
             "Test Paper", skeleton, _doc_map(), ["chunk"],
-            _agents(), multi_deck_threshold=3, max_review_cycles=1,
-            debug=False, output_dir=tmp_path,
+            _agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
+            total_chars=50_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
         assert isinstance(result, DeckIndex)
 

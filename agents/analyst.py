@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import dataclass
 from string import Template
 
 from schemas.chapter_map import ChapterMap
@@ -8,11 +9,17 @@ from schemas.global_skeleton import GlobalSkeleton, SectionEntry
 from agents.base import BaseAgent
 
 
+@dataclass
+class AnalystResult:
+    skeleton: GlobalSkeleton
+    doc_map: DocumentMap
+
+
 class AnalystAgent(BaseAgent):
     name = "analyst"
     output_schema = DocumentMap
 
-    async def run(self, extraction: dict) -> DocumentMap:
+    async def run(self, extraction: dict) -> AnalystResult:
         headers = extraction["headers"]
         chunks  = extraction["chunks"]
 
@@ -25,8 +32,11 @@ class AnalystAgent(BaseAgent):
         partial_maps = list(await asyncio.gather(*tasks))
 
         if len(partial_maps) == 1:
-            return partial_maps[0]
-        return await self._merge(skeleton, partial_maps)
+            doc_map = partial_maps[0]
+        else:
+            doc_map = await self._merge(skeleton, partial_maps)
+
+        return AnalystResult(skeleton=skeleton, doc_map=doc_map)
 
     # ──────────────────────────────────────────────
     # Pass 1 — build global skeleton from headers

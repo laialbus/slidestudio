@@ -10,8 +10,9 @@ import asyncio
 import pytest
 from pydantic import BaseModel
 
-from agents.analyst import AnalystAgent
+from agents.analyst import AnalystAgent, AnalystResult
 from providers.base import BaseProvider
+from providers.config import ProviderConfig
 from schemas.chapter_map import ChapterMap
 from schemas.document_map import DocumentMap, Section
 from schemas.global_skeleton import GlobalSkeleton, SectionEntry
@@ -29,12 +30,17 @@ class StubProvider(BaseProvider):
     """
 
     def __init__(self, responses: dict[type, list]):
-        super().__init__(
-            provider_name="stub",
+        super().__init__(ProviderConfig(
+            model="stub",
             max_concurrent=5,
             max_format_retries=3,
             max_rate_limit_retries=1,
-        )
+            request_timeout=5,
+            circuit_breaker_threshold=3,
+            circuit_breaker_cooldown=60,
+            backoff_wait_min=0,
+            backoff_wait_max=0,
+        ))
         self._responses = {k: list(v) for k, v in responses.items()}
         self._indices:  dict[type, int] = {}
         self.call_log:  list[type] = []
@@ -51,7 +57,7 @@ class StubProvider(BaseProvider):
         items = self._responses[schema]
         return items[idx % len(items)]
 
-    async def _call(self, messages: list, system: str) -> str:
+    async def _call(self, messages: list, system: str, response_schema=None) -> str:
         raise NotImplementedError("StubProvider._call should never be reached")
 
     @property
@@ -246,7 +252,8 @@ class TestFigurePlaceholderFlowThrough:
             "headers": ["Architecture"],
             "chunks":  [f"Self-attention mechanism. {self.FIGURE_TEXT} More text."],
         }))
-        all_summaries = " ".join(s.summary for s in result.sections)
+        assert isinstance(result, AnalystResult)
+        all_summaries = " ".join(s.summary for s in result.doc_map.sections)
         assert "[FIGURE EXCLUDED:" in all_summaries
 
     def test_single_chunk_skips_merge_returns_directly(self):
@@ -257,7 +264,7 @@ class TestFigurePlaceholderFlowThrough:
             "headers": ["Architecture"],
             "chunks":  ["chunk text with figure placeholder"],
         }))
-        assert result is expected
+        assert result.doc_map is expected
 
     def test_figure_text_preserved_through_merge(self):
         """With two chunks the merge path runs; figure text must reach final DocumentMap."""
@@ -289,7 +296,8 @@ class TestFigurePlaceholderFlowThrough:
             "headers": ["Intro"],
             "chunks":  ["chunk 0", "chunk 1"],
         }))
-        all_summaries = " ".join(s.summary for s in result.sections)
+        assert isinstance(result, AnalystResult)
+        all_summaries = " ".join(s.summary for s in result.doc_map.sections)
         assert "[FIGURE EXCLUDED:" in all_summaries
 
 
@@ -317,7 +325,8 @@ class TestConcurrentChunkAnalysis:
             "headers": ["Ch1"],
             "chunks":  [f"text {i}" for i in range(n)],
         }))
-        assert isinstance(result, DocumentMap)
+        assert isinstance(result, AnalystResult)
+        assert isinstance(result.doc_map, DocumentMap)
         # n DocumentMap calls for chunks + 1 for the final document merge
         assert stub._indices.get(DocumentMap, 0) == n + 1
 
@@ -345,7 +354,7 @@ class TestConcurrentChunkAnalysis:
             "headers": ["Introduction"],
             "chunks":  ["single chunk"],
         }))
-        assert result is doc
+        assert result.doc_map is doc
         assert ChapterMap not in stub._indices
 
     def test_skeleton_call_happens_before_chunks(self):

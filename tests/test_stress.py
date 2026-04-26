@@ -16,6 +16,7 @@ from agents.writer import WriterAgent
 from extractors.pdf import PDFExtractor
 from pipeline import run_single_deck
 from providers.base import BaseProvider
+from providers.config import ProviderConfig
 from schemas.critique import Critique, Issue, SlideReview
 from schemas.document_map import DocumentMap, Section
 from schemas.global_skeleton import GlobalSkeleton, SectionEntry
@@ -29,7 +30,7 @@ from schemas.slides_draft import DraftSlide, SlidesDraft
 
 class StubProvider(BaseProvider):
     def __init__(self):
-        super().__init__("stub", max_concurrent=5, max_format_retries=3, max_rate_limit_retries=1)
+        super().__init__(ProviderConfig(model="stub", max_concurrent=5, max_format_retries=3, max_rate_limit_retries=1, request_timeout=5, circuit_breaker_threshold=3, circuit_breaker_cooldown=60, backoff_wait_min=0, backoff_wait_max=0))
         self.call_count = 0
 
     async def complete_json(
@@ -70,7 +71,7 @@ class StubProvider(BaseProvider):
 
         raise ValueError(f"StubProvider: unexpected schema {schema}")
 
-    async def _call(self, messages: list, system: str) -> str:
+    async def _call(self, messages: list, system: str, response_schema=None) -> str:
         raise NotImplementedError
 
     @property

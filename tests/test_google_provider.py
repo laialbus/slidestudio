@@ -12,17 +12,24 @@ import pytest
 from google.api_core import exceptions as google_exceptions
 
 from providers.base import RateLimitError
+from providers.config import ProviderConfig
 from providers.google import GoogleProvider
 
 
 def _make_provider() -> GoogleProvider:
     return GoogleProvider(
-        provider_name="google",
-        model="gemini-2.5-pro",
+        config=ProviderConfig(
+            model="gemini-2.5-pro",
+            max_concurrent=5,
+            max_format_retries=1,
+            max_rate_limit_retries=1,
+            request_timeout=5,
+            circuit_breaker_threshold=3,
+            circuit_breaker_cooldown=60,
+            backoff_wait_min=0,
+            backoff_wait_max=0,
+        ),
         api_key="test-key",
-        max_concurrent=5,
-        max_format_retries=1,
-        max_rate_limit_retries=1,
     )
 
 
@@ -43,20 +50,23 @@ def _setup_mock_client(mock_client_cls, text: str = '{"result": "ok"}'):
 class TestGoogleProviderConstruction:
     def test_model_stored_on_instance(self):
         provider = GoogleProvider(
-            provider_name="google",
-            model="gemini-3.1-flash-lite-preview",
+            config=ProviderConfig(
+                model="gemini-3.1-flash-lite-preview",
+                max_concurrent=5,
+                max_format_retries=3,
+                max_rate_limit_retries=6,
+                request_timeout=5,
+                circuit_breaker_threshold=3,
+                circuit_breaker_cooldown=60,
+                backoff_wait_min=0,
+                backoff_wait_max=0,
+            ),
             api_key="key",
-            max_concurrent=5,
-            max_format_retries=3,
-            max_rate_limit_retries=6,
         )
         assert provider.model == "gemini-3.1-flash-lite-preview"
 
     def test_name_property_returns_google(self):
         assert _make_provider().name == "google"
-
-    def test_provider_name_stored(self):
-        assert _make_provider().provider_name == "google"
 
     def test_api_key_stored(self):
         assert _make_provider().api_key == "test-key"
@@ -150,12 +160,18 @@ class TestSuccessfulCall:
             with patch("providers.google.genai.Client") as mock_cls:
                 mock_client = _setup_mock_client(mock_cls)
                 provider = GoogleProvider(
-                    provider_name="google",
-                    model="gemini-3.1-flash-lite-preview",
+                    config=ProviderConfig(
+                        model="gemini-3.1-flash-lite-preview",
+                        max_concurrent=5,
+                        max_format_retries=1,
+                        max_rate_limit_retries=1,
+                        request_timeout=5,
+                        circuit_breaker_threshold=3,
+                        circuit_breaker_cooldown=60,
+                        backoff_wait_min=0,
+                        backoff_wait_max=0,
+                    ),
                     api_key="test-key",
-                    max_concurrent=5,
-                    max_format_retries=1,
-                    max_rate_limit_retries=1,
                 )
                 await provider._call([{"role": "user", "content": "test"}], "")
                 call_kwargs = mock_client.aio.models.generate_content.call_args.kwargs
@@ -194,12 +210,18 @@ class TestSuccessfulCall:
             with patch("providers.google.genai.Client") as mock_cls:
                 _setup_mock_client(mock_cls)
                 provider = GoogleProvider(
-                    provider_name="google",
-                    model="gemini-2.5-pro",
+                    config=ProviderConfig(
+                        model="gemini-2.5-pro",
+                        max_concurrent=5,
+                        max_format_retries=1,
+                        max_rate_limit_retries=1,
+                        request_timeout=5,
+                        circuit_breaker_threshold=3,
+                        circuit_breaker_cooldown=60,
+                        backoff_wait_min=0,
+                        backoff_wait_max=0,
+                    ),
                     api_key="live-key-123",
-                    max_concurrent=5,
-                    max_format_retries=1,
-                    max_rate_limit_retries=1,
                 )
                 # Client must NOT be instantiated at construction time
                 mock_cls.assert_not_called()

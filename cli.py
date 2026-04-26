@@ -5,27 +5,62 @@ import importlib
 import inspect
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import typer
 from dotenv import load_dotenv
 from rich import print as rprint
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
 import config
-from agents.analyst import AnalystAgent
+from providers.config import ProviderConfig
+from providers.errors import CircuitOpenError, FatalAPIError
 from agents.critic import CriticAgent
 from agents.planner import PlannerAgent
 from agents.refiner import RefinerAgent
 from agents.writer import WriterAgent
-from extractors.pdf import PDFExtractor
-from pipeline import route
+from pipeline import estimate as pipeline_estimate
+from pipeline import run as pipeline_run
 from providers.base import BaseProvider
-from schemas.global_skeleton import GlobalSkeleton, SectionEntry
-from utils.cost_estimator import analyze_pdf_cost
+from utils.checkpoint import Checkpoint, resolve_output_path
 
 load_dotenv()
 
 app = typer.Typer()
+
+
+def _make_progress_callback(
+    progress: Progress,
+) -> tuple[Callable[[str, int, int], None], Callable[[], None]]:
+    task_ids: dict[str, int] = {}
+
+    _stage_labels: dict[str, str] = {
+        "extract": "Extracting text",
+        "analyst": "Analyst",
+        "planner": "Planner",
+        "writer":  "Writer",
+        "review":  "Review",
+        "chapter": "Generating chapters",
+    }
+
+    def callback(stage: str, completed: int, total: int) -> None:
+        if stage not in task_ids:
+            label = _stage_labels.get(stage, stage)
+            task_ids[stage] = progress.add_task(label, total=total)
+        progress.update(task_ids[stage], completed=completed, total=total)
+
+    def finish_all() -> None:
+        for tid in task_ids.values():
+            progress.stop_task(tid)
+
+    return callback, finish_all
 
 
 # ──────────────────────────────────────────────────────────────
@@ -87,39 +122,45 @@ def _resolve_provider_class(provider_key: str) -> type[BaseProvider]:
 
 
 @app.command()
-def main(
+def run(
     pdf_path: str,
-    estimate: bool = False,
     open_browser: bool = typer.Option(False, "--open"),
     fast: bool = False,
     debug: bool = False,
     max_concurrent: Optional[int] = typer.Option(None, "--max-concurrent"),
     provider: Optional[str] = typer.Option(None, "--provider", help="Override config.PROVIDER"),
+    resume: bool = typer.Option(False, "--resume", help="Load completed stages from cache"),
+    force: bool = typer.Option(False, "--force", help="Ignore cache, run fresh, overwrite cache"),
 ):
     provider_key = provider or config.PROVIDER
     model_name   = config.MODELS[provider_key]
-
-    if estimate:
-        extractor = PDFExtractor(
-            chunk_size=config.PIPELINE["chunk_size"],
-            overlap_size=config.PIPELINE["overlap_size"],
-        )
-        extraction = extractor.extract(pdf_path)
-        rprint(analyze_pdf_cost(extraction, provider_key, model_name))
-        raise typer.Exit()
 
     _max_concurrent = max_concurrent if max_concurrent is not None else config.PIPELINE["max_concurrent"]
     max_cycles = 0 if fast else config.PIPELINE["max_review_cycles"]
     effective_debug = debug or config.PIPELINE["debug"]
 
+    checkpoint = _build_checkpoint(
+        pdf_path=Path(pdf_path).resolve(),
+        model_name=model_name,
+        chunk_size=config.PIPELINE["chunk_size"],
+        resume=resume and not force,
+    )
+
     provider_cls = _resolve_provider_class(provider_key)
-    provider_instance = provider_cls(
-        provider_name=provider_key,
+    provider_config = ProviderConfig(
         model=model_name,
-        api_key=_resolve_api_key(provider_key),
         max_concurrent=_max_concurrent,
         max_format_retries=config.PIPELINE["max_format_retries"],
-        max_rate_limit_retries=6,
+        max_rate_limit_retries=config.PIPELINE["max_rate_limit_retries"],
+        request_timeout=config.PIPELINE["request_timeout"],
+        circuit_breaker_threshold=config.PIPELINE["circuit_breaker_threshold"],
+        circuit_breaker_cooldown=config.PIPELINE["circuit_breaker_cooldown"],
+        backoff_wait_min=config.PIPELINE["backoff_wait_min"],
+        backoff_wait_max=config.PIPELINE["backoff_wait_max"],
+    )
+    provider_instance = provider_cls(
+        config=provider_config,
+        api_key=_resolve_api_key(provider_key),
     )
     agents = {
         "planner": PlannerAgent(provider_instance),
@@ -128,9 +169,39 @@ def main(
         "refiner": RefinerAgent(provider_instance),
     }
 
-    result, issues, output_path = asyncio.run(
-        _run_pipeline(pdf_path, provider_instance, agents, max_cycles, effective_debug)
-    )
+    pipeline_error: Exception | None = None
+    result = issues = output_path = None
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description:<30}"),
+        BarColumn(bar_width=20),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+    ) as progress:
+        on_progress_cb, finish_all = _make_progress_callback(progress)
+        try:
+            result, issues, output_path = asyncio.run(
+                _run_pipeline(
+                    pdf_path, provider_instance, agents,
+                    max_cycles, effective_debug, checkpoint,
+                    on_progress=on_progress_cb,
+                )
+            )
+        except (CircuitOpenError, FatalAPIError) as exc:
+            pipeline_error = exc
+        finally:
+            finish_all()
+
+    if pipeline_error is not None:
+        if isinstance(pipeline_error, CircuitOpenError):
+            rprint(f"[red]Pipeline stopped: {pipeline_error}[/red]")
+        else:
+            rprint(f"[red]API error (non-retryable): {pipeline_error}[/red]")
+        raise typer.Exit(code=1)
+
+    if output_path is not None:
+        checkpoint.save_output_path(output_path)
 
     if issues:
         rprint("[yellow]Completed with warnings:[/yellow]")
@@ -144,40 +215,79 @@ def main(
         serve_and_open(output_path, config.PIPELINE["port"])
 
 
+@app.command()
+def estimate(pdf_path: str):
+    """Dry-run cost estimate — prints token usage and cost without making API calls."""
+    provider_key = config.PROVIDER
+    model_name   = config.MODELS[provider_key]
+    rprint(pipeline_estimate(
+        file_path=Path(pdf_path),
+        chunk_size=config.PIPELINE["chunk_size"],
+        overlap_size=config.PIPELINE["overlap_size"],
+        provider_key=provider_key,
+        model_name=model_name,
+    ))
+
+
+@app.command()
+def serve(pdf_path: str):
+    """Open the viewer for a previously generated output without re-running the pipeline."""
+    provider_key = config.PROVIDER
+    model_name   = config.MODELS[provider_key]
+    output_path  = resolve_output_path(
+        pdf_path=str(Path(pdf_path).resolve()),
+        model=model_name,
+        chunk_size=config.PIPELINE["chunk_size"],
+    )
+    if output_path is None:
+        rprint(
+            f"[red]No output found for '{pdf_path}'.[/red]\n"
+            f"Run [bold]python cli.py run {pdf_path}[/bold] first to generate slides."
+        )
+        raise typer.Exit(code=1)
+    from exporters.html_server import serve_and_open
+    serve_and_open(output_path, config.PIPELINE["port"])
+
+
+def _build_checkpoint(
+    pdf_path: Path,
+    model_name: str,
+    chunk_size: int,
+    resume: bool,
+) -> Checkpoint:
+    try:
+        run_key = Checkpoint.compute_key(pdf_path, model_name, chunk_size)
+    except OSError:
+        # PDF doesn't exist yet — the pipeline will fail at extraction.
+        # Use a path-based fallback key so the Checkpoint object is still valid.
+        import hashlib
+        run_key = hashlib.sha256(str(pdf_path).encode()).hexdigest()[:16]
+    cache_dir = Path(".checkpoints").resolve()
+    return Checkpoint(base_dir=cache_dir, run_key=run_key, resume=resume)
+
+
 async def _run_pipeline(
     pdf_path: str,
     provider,
     agents: dict,
     max_review_cycles: int,
     debug: bool,
+    checkpoint: Checkpoint,
+    on_progress: Callable[[str, int, int], None] | None = None,
 ):
-    extractor = PDFExtractor(
+    return await pipeline_run(
+        file_path=Path(pdf_path).resolve(),
+        provider=provider,
+        agents=agents,
+        output_dir=Path("outputs").resolve(),
         chunk_size=config.PIPELINE["chunk_size"],
         overlap_size=config.PIPELINE["overlap_size"],
-    )
-    extraction = extractor.extract(pdf_path)
-    doc_map = await AnalystAgent(provider).run(extraction)
-
-    skeleton = GlobalSkeleton(
-        title=Path(pdf_path).stem,
-        document_type=doc_map.document_type,
-        core_thesis=doc_map.core_thesis[:400],
-        sections=[
-            SectionEntry(heading=h, level=1, position=i)
-            for i, h in enumerate(extraction["headers"])
-        ],
-    )
-
-    return await route(
-        title=Path(pdf_path).stem,
-        skeleton=skeleton,
-        doc_map=doc_map,
-        chunks=extraction["chunks"],
-        agents=agents,
-        multi_deck_threshold=config.PIPELINE["multi_deck_threshold"],
+        multi_deck_chapter_threshold=config.PIPELINE["multi_deck_chapter_threshold"],
+        multi_deck_length_threshold=config.PIPELINE["multi_deck_length_threshold"],
         max_review_cycles=max_review_cycles,
         debug=debug,
-        output_dir=Path("outputs"),
+        checkpoint=checkpoint,
+        on_progress=on_progress,
     )
 
 

@@ -15,7 +15,7 @@ def serve_and_open(output_path: Path, port: int) -> None:
     except ValueError:
         relative = output_path
 
-    viewer_url = f"http://localhost:{port}/exporters/html/index.html?file={relative}"
+    viewer_url = f"http://localhost:{port}/exporters/html/index.html?file=/{relative}"
 
     class _Handler(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):

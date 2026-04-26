@@ -4,6 +4,7 @@ venv/
 
 # Python caches
 __pycache__/
+.pytest_cache/
 *.pyc
 
 # Output results
@@ -12,3 +13,6 @@ examples/
 
 # pdf files
 pdfs
+
+.claude/
+.checkpoints/
