@@ -132,21 +132,10 @@
       line-height: 1.2;
       margin-bottom: 22px;
     }
-    .slide-bullets { list-style: none; display: flex; flex-direction: column; gap: 11px; }
-    .slide-bullets li {
+    .slide-body {
       font-size: clamp(13px, 1.6vw, 17px);
-      line-height: 1.55;
+      line-height: 1.7;
       color: #c9d1d9;
-      padding-left: 22px;
-      position: relative;
-    }
-    .slide-bullets li::before {
-      content: '›';
-      position: absolute;
-      left: 0;
-      color: var(--accent);
-      font-size: 1.3em;
-      line-height: 1.3;
     }
 
     /* ── Controls ───────────────────────────── */
@@ -261,9 +250,9 @@
         const d = document.createElement('div');
         d.className = 'slide' + (i === 0 ? ' active' : '');
         d.innerHTML =
-          '<div class="slide-tag">'    + esc(s.tag || '') + '</div>' +
-          '<h2 class="slide-title">'   + esc(s.title)     + '</h2>'  +
-          '<ul class="slide-bullets">' + s.bullets.map(b => '<li>' + esc(b) + '</li>').join('') + '</ul>';
+          '<div class="slide-tag">'  + esc(s.tag || '') + '</div>' +
+          '<h2 class="slide-title">' + esc(s.heading)   + '</h2>'  +
+          '<p class="slide-body">'   + esc(s.body)       + '</p>';
         box.appendChild(d);
       });
       $('reel').classList.remove('hidden');

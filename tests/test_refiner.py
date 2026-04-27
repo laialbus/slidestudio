@@ -59,11 +59,11 @@ def _doc_map() -> DocumentMap:
     )
 
 
-def _draft_slide(index: int, title: str = "") -> DraftSlide:
+def _draft_slide(index: int, heading: str = "") -> DraftSlide:
     return DraftSlide(
         index=index,
-        title=title or f"Slide {index}",
-        bullets=["Original bullet."],
+        heading=heading or f"Slide {index}",
+        body="Original explanation sentence.",
         tag="Key Concept",
     )
 
@@ -144,13 +144,13 @@ class TestRefinerOnlyFlaggedSent:
         slides = SlidesDraft(
             title="Test Deck",
             slides=[
-                _draft_slide(1, title=self.UNFLAGGED_TITLE),
-                _draft_slide(2, title=self.FLAGGED_TITLE),
+                _draft_slide(1, heading=self.UNFLAGGED_TITLE),
+                _draft_slide(2, heading=self.FLAGGED_TITLE),
             ],
         )
         corrected = SlidesDraft(
             title="Test Deck",
-            slides=[_draft_slide(2, title="FIXED_SLIDE")],
+            slides=[_draft_slide(2, heading="FIXED_SLIDE")],
         )
         stub = StubProvider({SlidesDraft: [corrected]})
         agent = RefinerAgent(stub)
@@ -187,19 +187,19 @@ class TestRefinerOnlyFlaggedSent:
 
 class TestRefinerMerge:
     def test_unflagged_slides_unchanged_by_identity(self):
-        original_slide_1 = _draft_slide(1, title="ORIGINAL_SLIDE_ONE")
-        original_slide_3 = _draft_slide(3, title="ORIGINAL_SLIDE_THREE")
+        original_slide_1 = _draft_slide(1, heading="ORIGINAL_SLIDE_ONE")
+        original_slide_3 = _draft_slide(3, heading="ORIGINAL_SLIDE_THREE")
         slides = SlidesDraft(
             title="Test Deck",
             slides=[
                 original_slide_1,
-                _draft_slide(2, title="FLAGGED_SLIDE"),
+                _draft_slide(2, heading="FLAGGED_SLIDE"),
                 original_slide_3,
             ],
         )
         corrected = SlidesDraft(
             title="Test Deck",
-            slides=[_draft_slide(2, title="FIXED_SLIDE_TWO")],
+            slides=[_draft_slide(2, heading="FIXED_SLIDE_TWO")],
         )
         stub = StubProvider({SlidesDraft: [corrected]})
         agent = RefinerAgent(stub)
@@ -209,17 +209,17 @@ class TestRefinerMerge:
 
         slide_1 = next(s for s in result.slides if s.index == 1)
         slide_3 = next(s for s in result.slides if s.index == 3)
-        assert slide_1.title == "ORIGINAL_SLIDE_ONE"
-        assert slide_3.title == "ORIGINAL_SLIDE_THREE"
+        assert slide_1.heading == "ORIGINAL_SLIDE_ONE"
+        assert slide_3.heading == "ORIGINAL_SLIDE_THREE"
 
     def test_flagged_slide_replaced_by_corrected_version(self):
         slides = SlidesDraft(
             title="Test Deck",
-            slides=[_draft_slide(2, title="ORIGINAL_SLIDE_TWO")],
+            slides=[_draft_slide(2, heading="ORIGINAL_SLIDE_TWO")],
         )
         corrected = SlidesDraft(
             title="Test Deck",
-            slides=[_draft_slide(2, title="FIXED_SLIDE_TWO")],
+            slides=[_draft_slide(2, heading="FIXED_SLIDE_TWO")],
         )
         stub = StubProvider({SlidesDraft: [corrected]})
         agent = RefinerAgent(stub)
@@ -227,12 +227,12 @@ class TestRefinerMerge:
 
         slides_full = SlidesDraft(
             title="Test Deck",
-            slides=[_draft_slide(1), _draft_slide(2, title="ORIGINAL_SLIDE_TWO")],
+            slides=[_draft_slide(1), _draft_slide(2, heading="ORIGINAL_SLIDE_TWO")],
         )
         result = _run(agent.run(_doc_map(), slides_full, critique))
 
         slide_2 = next(s for s in result.slides if s.index == 2)
-        assert slide_2.title == "FIXED_SLIDE_TWO"
+        assert slide_2.heading == "FIXED_SLIDE_TWO"
 
     def test_merge_preserves_slide_count(self):
         slides = SlidesDraft(
@@ -241,7 +241,7 @@ class TestRefinerMerge:
         )
         corrected = SlidesDraft(
             title="Test Deck",
-            slides=[_draft_slide(3, title="FIXED")],
+            slides=[_draft_slide(3, heading="FIXED")],
         )
         stub = StubProvider({SlidesDraft: [corrected]})
         agent = RefinerAgent(stub)
@@ -258,7 +258,7 @@ class TestRefinerMerge:
         )
         corrected = SlidesDraft(
             title="Test Deck",
-            slides=[_draft_slide(1, title="FIXED")],
+            slides=[_draft_slide(1, heading="FIXED")],
         )
         stub = StubProvider({SlidesDraft: [corrected]})
         agent = RefinerAgent(stub)
@@ -276,8 +276,8 @@ class TestRefinerMerge:
         corrected = SlidesDraft(
             title="Test Deck",
             slides=[
-                _draft_slide(1, title="FIXED_ONE"),
-                _draft_slide(3, title="FIXED_THREE"),
+                _draft_slide(1, heading="FIXED_ONE"),
+                _draft_slide(3, heading="FIXED_THREE"),
             ],
         )
         stub = StubProvider({SlidesDraft: [corrected]})
@@ -288,6 +288,6 @@ class TestRefinerMerge:
 
         slide_1 = next(s for s in result.slides if s.index == 1)
         slide_3 = next(s for s in result.slides if s.index == 3)
-        assert slide_1.title == "FIXED_ONE"
-        assert slide_3.title == "FIXED_THREE"
+        assert slide_1.heading == "FIXED_ONE"
+        assert slide_3.heading == "FIXED_THREE"
         assert len(result.slides) == 4

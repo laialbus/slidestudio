@@ -245,7 +245,7 @@ class TestChapterMap:
             ChapterMap(
                 chapter_heading="Ch1",
                 key_concepts=["a"],
-                summary="x" * 501,
+                summary="x" * 1001,
                 chunk_range=(0, 1),
             )
 
@@ -256,7 +256,7 @@ class TestChapterMap:
 
 class TestSlidesDraft:
     def test_valid_construction(self):
-        slide = DraftSlide(index=1, title="Slide 1", bullets=["Point A"], tag="Key Concept")
+        slide = DraftSlide(index=1, heading="Slide 1", body="Point A.", tag="Key Concept")
         draft = SlidesDraft(title="Deck", slides=[slide])
         assert len(draft.slides) == 1
 
@@ -264,14 +264,14 @@ class TestSlidesDraft:
         with pytest.raises(ValidationError):
             SlidesDraft(title="Deck", slides=[])
 
-    def test_empty_bullets_raises(self):
+    def test_empty_body_raises(self):
         with pytest.raises(ValidationError):
-            DraftSlide(index=1, title="S", bullets=[], tag="Summary")
+            DraftSlide(index=1, heading="S", body="", tag="Summary")
 
 
 class TestSlidesFinal:
     def test_valid_construction(self):
-        slide = FinalSlide(index=1, title="Slide 1", bullets=["Point A"], tag="Key Concept")
+        slide = FinalSlide(index=1, heading="Slide 1", body="Point A.", tag="Key Concept")
         final = SlidesFinal(title="Deck", slides=[slide])
         assert final.title == "Deck"
 

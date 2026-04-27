@@ -15,6 +15,6 @@ Return a JSON object matching the SlidesDraft schema:
 {
   "title": "<same title as input>",
   "slides": [
-    {"index": <same as flagged input>, "title": "...", "bullets": ["...", "..."], "tag": "..."}
+    {"index": <same as flagged input>, "tag": "...", "heading": "...", "body": "..."}
   ]
 }

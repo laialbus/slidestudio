@@ -32,7 +32,7 @@ def _slides_draft(count: int = 2) -> SlidesDraft:
     return SlidesDraft(
         title="Test Deck",
         slides=[
-            DraftSlide(index=i + 1, title=f"Slide {i + 1}", bullets=["Bullet."], tag="Key Concept")
+            DraftSlide(index=i + 1, heading=f"Slide {i + 1}", body="Bullet.", tag="Key Concept")
             for i in range(count)
         ],
     )

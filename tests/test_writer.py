@@ -76,7 +76,7 @@ def _planned_slide(
 
 
 def _draft_slide(index: int) -> DraftSlide:
-    return DraftSlide(index=index, title=f"Slide {index}", bullets=["A bullet."], tag="Key Concept")
+    return DraftSlide(index=index, heading=f"Slide {index}", body="A bullet.", tag="Key Concept")
 
 
 def _draft(slides: list[DraftSlide]) -> SlidesDraft:

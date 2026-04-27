@@ -3,9 +3,9 @@ from pydantic import BaseModel, Field
 
 class FinalSlide(BaseModel):
     index:   int
-    title:   str
-    bullets: list[str] = Field(min_length=1)
     tag:     str
+    heading: str
+    body:    str = Field(min_length=1)
 
 
 class SlidesFinal(BaseModel):

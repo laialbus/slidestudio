@@ -49,7 +49,7 @@ def _doc_map() -> DocumentMap:
 def _slides_final() -> SlidesFinal:
     return SlidesFinal(
         title="Test",
-        slides=[FinalSlide(index=1, title="S", bullets=["B."], tag="Key Concept")],
+        slides=[FinalSlide(index=1, heading="S", body="B.", tag="Key Concept")],
     )
 
 

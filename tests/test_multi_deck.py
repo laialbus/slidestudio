@@ -48,7 +48,7 @@ def _skeleton_with_chapters(n: int) -> GlobalSkeleton:
 def _slides_final() -> SlidesFinal:
     return SlidesFinal(
         title="Test",
-        slides=[FinalSlide(index=1, title="Slide 1", bullets=["Bullet."], tag="Key Concept")],
+        slides=[FinalSlide(index=1, heading="Slide 1", body="Bullet.", tag="Key Concept")],
     )
 
 

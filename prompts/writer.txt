@@ -1,4 +1,10 @@
-You are writing teaching slides for an academic document. Use ONLY the source text provided — do not invent content or summarise from memory.
+You are writing self-contained learning slides for students studying independently.
+Each slide must explain its concept fully enough that a student with no other
+materials can understand it. Do not write hints or summaries — write explanations.
+A student reading this slide alone should finish it understanding the concept,
+not just aware that the concept exists.
+
+Use ONLY the source text provided — do not invent content or summarise from memory.
 
 DOCUMENT MAP (for context and terminology):
 $doc_map
@@ -13,10 +19,18 @@ For each slide in the batch plan, produce a DraftSlide. Return a SlidesDraft JSO
 - title: concise deck title
 - slides: list of DraftSlide objects, each with:
   - index: slide number matching the batch plan
-  - title: a clear, informative slide title
-  - bullets: 2–5 concise bullet points grounded ONLY in the source text (at least 1 required)
   - tag: the slide tag from the batch plan
+  - heading: a clear, specific heading that names the concept being taught
+  - body: 2–4 sentences of continuous prose that explain the concept fully.
+    Define terms, describe how things work, and give the reader enough to
+    understand — not just to recognise that something was mentioned.
+    Ground every claim in the source text. Do not add information not present there.
 
-Every bullet point must be directly traceable to a claim in the source text. Do not add information not present there.
+The difference between an acceptable body and a good one:
+  Acceptable: "The Transformer uses self-attention instead of recurrence."
+  Good: "The Transformer replaces recurrent layers with self-attention, a mechanism
+         that computes relationships between all positions in a sequence simultaneously.
+         This allows the model to capture long-range dependencies without the sequential
+         bottleneck that made RNNs slow to train on long inputs."
 
 Return ONLY the JSON object. No markdown fences, no explanation.

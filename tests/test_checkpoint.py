@@ -81,7 +81,7 @@ def _slides_final() -> SlidesFinal:
     return SlidesFinal(
         title="Test Deck",
         slides=[
-            FinalSlide(index=i + 1, title=f"Slide {i+1}", bullets=["A point."], tag="Key Concept")
+            FinalSlide(index=i + 1, heading=f"Slide {i+1}", body="A point.", tag="Key Concept")
             for i in range(4)
         ],
     )
@@ -91,7 +91,7 @@ def _slides_draft() -> SlidesDraft:
     return SlidesDraft(
         title="Test Deck",
         slides=[
-            DraftSlide(index=i + 1, title=f"Slide {i+1}", bullets=["A point."], tag="Key Concept")
+            DraftSlide(index=i + 1, heading=f"Slide {i+1}", body="A point.", tag="Key Concept")
             for i in range(4)
         ],
     )

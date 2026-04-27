@@ -9,7 +9,7 @@ MODELS = {
     "openai":      "gpt-4o",
     "groq":        "llama-3.1-70b-versatile",
     "ollama":      "llama3.1",
-    "google":      "gemini-3.1-pro-preview",
+    "google":      "gemini-2.5-flash-lite",     # "gemini-3.1-pro-preview",
     "google-fast": "gemma-4-31b-it",
 }
 
@@ -27,7 +27,7 @@ PIPELINE = {
     #   ~40,000 chars ≈ 20 pages of dense academic text.
     #   Both conditions must be true for multi-deck mode to activate.
     "multi_deck_chapter_threshold": 3,       # minimum level-1 chapters for multi-deck
-    "multi_deck_length_threshold":  40_000,  # minimum characters for multi-deck (~20 pages)
+    "multi_deck_length_threshold":  100_000,  # minimum characters for multi-deck (~20 pages)
     # ── Concurrency ─────────────────────────────────────────────────────────────
     "max_concurrent":       None,    # None = use provider-aware default (5 for cloud, 1 for ollama)
     # ── Retry and format ────────────────────────────────────────────────────────

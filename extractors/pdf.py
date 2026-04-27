@@ -132,14 +132,17 @@ class PDFExtractor:
 
             for block in blocks:
                 for line in block.get("lines", []):
-                    for span in line.get("spans", []):
-                        text    = span.get("text", "").strip()
-                        size    = span["size"]
-                        is_bold = "bold" in span.get("font", "").lower()
-                        if not text:
-                            continue
-                        if size > body_size or (size == body_size and is_bold):
-                            headers.append(text)
+                    spans = [s for s in line.get("spans", []) if s.get("text", "").strip()]
+                    if not spans:
+                        continue
+                    is_header = any(
+                        s["size"] > body_size or (s["size"] == body_size and "bold" in s.get("font", "").lower())
+                        for s in spans
+                    )
+                    if is_header:
+                        line_text = " ".join(s["text"].strip() for s in spans)
+                        if line_text:
+                            headers.append(line_text)
 
         return headers
 

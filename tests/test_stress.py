@@ -51,7 +51,7 @@ class StubProvider(BaseProvider):
             return SlidesDraft(
                 title="Test",
                 slides=[DraftSlide(
-                    index=1, title="Slide 1", bullets=["Bullet."], tag="Key Concept"
+                    index=1, heading="Slide 1", body="Bullet.", tag="Key Concept"
                 )],
             )
 

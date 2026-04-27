@@ -98,9 +98,8 @@ class BaseProvider:
                 messages.append({
                     "role": "user",
                     "content": (
-                        f"Your response was invalid. Error: {e}\n\n"
-                        "Please return ONLY a valid JSON object that matches "
-                        "the required schema. No explanation, no markdown."
+                        f"Your response was not valid JSON. Error: {e}\n\n"
+                        "Return ONLY a JSON object. No explanation, no markdown."
                     ),
                 })
                 continue
@@ -143,12 +142,40 @@ class BaseProvider:
                 messages.append({"role": "assistant", "content": raw})
                 messages.append({
                     "role": "user",
-                    "content": (
-                        f"Your response was invalid. Error: {e}\n\n"
-                        "Please return ONLY a valid JSON object that matches "
-                        "the required schema. No explanation, no markdown."
-                    ),
+                    "content": self._build_retry_message(e, schema),
                 })
+
+    def _build_retry_message(
+        self, error: ValidationError, schema: type[BaseModel]
+    ) -> str:
+        constraint_types = {
+            "string_too_long", "string_too_short",
+            "too_long", "too_short",
+            "greater_than", "less_than",
+            "greater_than_equal", "less_than_equal",
+        }
+        errors = error.errors()
+        constraint_errors = [e for e in errors if e["type"] in constraint_types]
+        structural_errors = [e for e in errors if e["type"] not in constraint_types]
+
+        parts = []
+        for e in constraint_errors:
+            field = " -> ".join(str(loc) for loc in e["loc"])
+            parts.append(
+                f"Field '{field}': {e['msg']}. "
+                f"Rewrite this field to satisfy the constraint."
+            )
+        if structural_errors:
+            parts.append(
+                f"Structural errors detected. Return a valid JSON object "
+                f"with these fields: {list(schema.model_fields.keys())}."
+            )
+
+        return (
+            "Your response was invalid:\n"
+            + "\n".join(parts)
+            + "\n\nReturn ONLY the corrected JSON object. No explanation, no markdown."
+        )
 
     @staticmethod
     def _extract_json(text: str) -> str:

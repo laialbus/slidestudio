@@ -59,11 +59,11 @@ def _doc_map() -> DocumentMap:
     )
 
 
-def _draft_slide(index: int, title: str = "") -> DraftSlide:
+def _draft_slide(index: int, heading: str = "") -> DraftSlide:
     return DraftSlide(
         index=index,
-        title=title or f"Slide {index}",
-        bullets=["A bullet point."],
+        heading=heading or f"Slide {index}",
+        body="A sentence explaining the concept.",
         tag="Key Concept",
     )
 
@@ -115,7 +115,7 @@ class TestCriticAllPass:
     def test_prompt_contains_slides_content(self):
         slides = SlidesDraft(
             title="Test Deck",
-            slides=[_draft_slide(1, title="UNIQUE_SLIDE_TITLE_X")],
+            slides=[_draft_slide(1, heading="UNIQUE_SLIDE_TITLE_X")],
         )
         critique = Critique(slides=[SlideReview(index=1, passed=True)])
         stub = StubProvider({Critique: [critique]})
