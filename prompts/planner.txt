@@ -20,4 +20,21 @@ Return a JSON object with:
   - emphasis: what the viewer should walk away remembering (max 200 chars)
   - chunk_indices: list of 1–3 chunk IDs whose raw text is needed to write this slide accurately
 
+Slide design rules for a college student audience:
+- For every 3 "Key Concept" or "Definition" slides, schedule at least 1
+  "Example" slide that demonstrates the concept with a concrete case drawn
+  from the source material. Do not invent examples.
+- When a concept builds directly on an earlier concept, note this dependency
+  in the intention field so the Writer knows to briefly anchor the explanation
+  to what the student has already seen.
+- Schedule "Definition" before "Key Concept" when a term is technical and
+  unlikely to be familiar to a college student without prior specialist training.
+  Do not assume expert background.
+- "Insight" and "Takeaway" slides must express a non-obvious conclusion —
+  something a student would not have predicted before reading the material.
+  If the slide would merely restate a Key Concept, use that tag instead.
+- The final slide must be tagged "Summary" or "Takeaway". Set its chunk_indices
+  to an empty list []. It will be generated separately from the completed deck,
+  not from source chunks.
+
 Return ONLY the JSON object. No markdown fences, no explanation.

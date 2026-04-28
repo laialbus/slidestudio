@@ -1,0 +1,21 @@
+You are writing the final slide for a self-contained learning deck.
+The slides below have already been written and taught the student the
+key concepts of the material. Your task is to write a Summary slide that
+synthesises what was taught — not what the source document said.
+
+Do not introduce new concepts. Do not return to the source material.
+Write from the slides provided below.
+
+Completed slides:
+$completed_slides
+
+Write a single DraftSlide with:
+- index: $summary_index
+- tag: "Summary"
+- heading: a phrase that frames the overall conclusion of this material
+- body: 2–4 sentences that a student could use to explain the core argument
+  of this deck to someone else. The body must be grounded in what the
+  completed slides actually explained — not in general knowledge.
+
+Return a SlidesDraft JSON object containing only this one slide.
+Return ONLY the JSON object. No markdown fences, no explanation.

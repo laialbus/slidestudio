@@ -16,6 +16,7 @@ class RefinerAgent(BaseAgent):
         doc_map: DocumentMap,
         slides: SlidesDraft,
         critique: Critique,
+        deck_feedback: str | None = None,
     ) -> SlidesDraft:
         failed = critique.failed_slides
         if not failed:
@@ -34,6 +35,8 @@ class RefinerAgent(BaseAgent):
 
         prompt = Template(self.prompt_template).safe_substitute(
             doc_map=doc_map.model_dump_json(indent=2),
+            all_slides=slides.model_dump_json(indent=2),
+            deck_feedback=deck_feedback or "none",
             flagged_slides=flagged_json,
             critiques=critiques_text,
         )

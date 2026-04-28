@@ -195,3 +195,123 @@ class TestBoldOnlyHeaders:
         headers = result["headers"]
         # "paragraph" only appears in regular-weight body text
         assert not any("paragraph" in h.lower() for h in headers)
+
+
+# ──────────────────────────────────────────────────────────────
+# Equation PDF fixture helpers
+# ──────────────────────────────────────────────────────────────
+
+def _equation_heuristic_pdf(tmp_path) -> str:
+    """
+    Single-page PDF: narrow (60px) and tall (120px) image block, no figure
+    caption following it.  Width < 0.8*595 and height > width, so the size
+    heuristic should classify it as an equation.
+    """
+    doc  = pymupdf.open()
+    page = doc.new_page(width=595, height=842)
+
+    page.insert_text((72, 70), "The cost function is computed as follows:", fontsize=10)
+    # width=60, height=120 → height > width; 60 < 0.8*595=476
+    page.insert_image(pymupdf.Rect(267, 90, 327, 210), stream=_make_1x1_png())
+    page.insert_text((72, 225), "This yields the minimum loss.", fontsize=10)
+
+    path = str(tmp_path / "equation_heuristic.pdf")
+    doc.save(path)
+    doc.close()
+    return path
+
+
+def _equation_context_pdf(tmp_path) -> str:
+    """
+    Single-page PDF: image block followed by 'where ...' variable description.
+    Context detection should classify this as an equation regardless of size.
+    """
+    doc  = pymupdf.open()
+    page = doc.new_page(width=595, height=842)
+
+    page.insert_text((72, 70),  "The attention score is:", fontsize=10)
+    page.insert_image(pymupdf.Rect(72, 90, 300, 150), stream=_make_1x1_png())
+    page.insert_text((72, 165), "where Q, K, and V are the query, key, and value matrices.", fontsize=10)
+
+    path = str(tmp_path / "equation_context.pdf")
+    doc.save(path)
+    doc.close()
+    return path
+
+
+def _figure_and_equation_pdf(tmp_path) -> str:
+    """
+    Single-page PDF: a wide figure with 'Figure N' caption, then a narrow
+    tall equation image.  Both placeholder types must appear in document order.
+    """
+    doc  = pymupdf.open()
+    page = doc.new_page(width=595, height=842)
+
+    # Figure block (wide) followed by a figure caption
+    page.insert_text((72,  40),  "Context before figure.", fontsize=10)
+    page.insert_image(pymupdf.Rect(72,  55, 500, 160), stream=_make_1x1_png())
+    page.insert_text((72, 175), "Figure 1: Network architecture overview.", fontsize=10)
+
+    # Equation block (narrow + tall) with no figure caption
+    page.insert_text((72, 230), "The loss is computed as:", fontsize=10)
+    page.insert_image(pymupdf.Rect(267, 248, 327, 368), stream=_make_1x1_png())
+    page.insert_text((72, 383), "This gives the final optimisation target.", fontsize=10)
+
+    path = str(tmp_path / "figure_and_equation.pdf")
+    doc.save(path)
+    doc.close()
+    return path
+
+
+# ──────────────────────────────────────────────────────────────
+# Scenario 4 — Equation placeholders
+# ──────────────────────────────────────────────────────────────
+
+class TestEquationPlaceholders:
+    def test_equation_placeholder_via_heuristic(self, tmp_path):
+        """Narrow, tall image with no figure caption → [EQUATION: ...]."""
+        result = PDFExtractor(chunk_size=8_000, overlap_size=1_500).extract(
+            _equation_heuristic_pdf(tmp_path)
+        )
+        text = " ".join(result["chunks"])
+        assert "[EQUATION:" in text
+
+    def test_equation_placeholder_via_context(self, tmp_path):
+        """Image followed by 'where ...' → [EQUATION: ...]."""
+        result = PDFExtractor(chunk_size=8_000, overlap_size=1_500).extract(
+            _equation_context_pdf(tmp_path)
+        )
+        text = " ".join(result["chunks"])
+        assert "[EQUATION:" in text
+
+    def test_figure_caption_not_labelled_as_equation(self, tmp_path):
+        """Image immediately followed by 'Figure N' caption → [FIGURE EXCLUDED: ...], not equation."""
+        result = PDFExtractor(chunk_size=8_000, overlap_size=1_500).extract(
+            _figure_pdf(tmp_path)
+        )
+        text = " ".join(result["chunks"])
+        assert "[FIGURE EXCLUDED:" in text
+        assert "[EQUATION:" not in text
+
+    def test_both_placeholder_types_in_document_order(self, tmp_path):
+        """Page with a figure then an equation → both placeholders, figure before equation."""
+        result = PDFExtractor(chunk_size=8_000, overlap_size=1_500).extract(
+            _figure_and_equation_pdf(tmp_path)
+        )
+        text = " ".join(result["chunks"])
+        assert "[FIGURE EXCLUDED:" in text
+        assert "[EQUATION:" in text
+        assert text.index("[FIGURE EXCLUDED:") < text.index("[EQUATION:")
+
+    def test_equation_placeholder_position_in_chunk(self, tmp_path):
+        """Placeholder must sit between the text before and after the block."""
+        result = PDFExtractor(chunk_size=8_000, overlap_size=1_500).extract(
+            _equation_context_pdf(tmp_path)
+        )
+        text = " ".join(result["chunks"])
+        before = "The attention score is:"
+        after  = "where Q, K"
+        eq_pos     = text.index("[EQUATION:")
+        before_pos = text.index(before)
+        after_pos  = text.index(after)
+        assert before_pos < eq_pos < after_pos

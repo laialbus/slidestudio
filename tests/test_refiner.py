@@ -163,11 +163,16 @@ class TestRefinerOnlyFlaggedSent:
         _, prompt = stub.received_prompts[0]
         assert self.FLAGGED_TITLE in prompt
 
-    def test_prompt_does_not_contain_unflagged_slide_title(self):
+    def test_unflagged_slide_in_full_deck_context_but_not_in_flagged_section(self):
+        # The refiner now receives the full deck as read-only context ($all_slides)
+        # so the unflagged title will appear in the prompt, but must NOT appear in
+        # the flagged slides section that the model is asked to rewrite.
         agent, stub, slides, critique = self._setup()
         _run(agent.run(_doc_map(), slides, critique))
         _, prompt = stub.received_prompts[0]
-        assert self.UNFLAGGED_TITLE not in prompt
+        assert self.UNFLAGGED_TITLE in prompt  # present as full-deck context
+        flagged_section = prompt.split("Flagged Slides (rewrite these only):")[-1]
+        assert self.UNFLAGGED_TITLE not in flagged_section
 
     def test_prompt_contains_critique_detail(self):
         agent, stub, slides, critique = self._setup()

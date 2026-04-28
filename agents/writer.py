@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 from string import Template
 
 from schemas.document_map import DocumentMap
@@ -40,6 +41,18 @@ class WriterAgent(BaseAgent):
             slides[i : i + self.writer_batch_size]
             for i in range(0, len(slides), self.writer_batch_size)
         ]
+
+    async def write_summary(
+        self,
+        completed_slides: SlidesDraft,
+        summary_index: int,
+    ) -> SlidesDraft:
+        summary_template = Path("prompts/writer_summary.txt").read_text()
+        prompt = Template(summary_template).safe_substitute(
+            completed_slides=completed_slides.model_dump_json(indent=2),
+            summary_index=summary_index,
+        )
+        return await self._call(prompt, SlidesDraft)
 
     async def _write_batch(
         self,

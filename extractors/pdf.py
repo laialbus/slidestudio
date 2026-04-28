@@ -1,3 +1,4 @@
+import re
 from statistics import mode, StatisticsError
 
 import pymupdf
@@ -5,6 +6,10 @@ import pymupdf
 # CHUNK_SIZE     = 8_000
 # OVERLAP_SIZE     = 1_500
 BLOCK_TYPE_IMAGE = 1
+
+# Equation-signal patterns for context-based classification.
+_EQ_LABEL_RE   = re.compile(r"\b(eq\.?\s*\d+|equation\s*\d+)\b", re.IGNORECASE)
+_EQ_CONTEXT_RE = re.compile(r"\b(where|in which)\b", re.IGNORECASE)
 
 
 class PDFExtractor:
@@ -58,22 +63,7 @@ class PDFExtractor:
 
             for i, block in enumerate(blocks):
                 if block["type"] == BLOCK_TYPE_IMAGE:
-                    # Look for a caption in the immediately following text block.
-                    caption = ""
-                    if i + 1 < len(blocks) and blocks[i + 1]["type"] == 0:
-                        next_spans = [
-                            span["text"].strip()
-                            for line in blocks[i + 1].get("lines", [])
-                            for span in line.get("spans", [])
-                        ]
-                        candidate = " ".join(next_spans)
-                        if candidate.lower().startswith(("fig", "figure", "chart")):
-                            caption = candidate
-                    ph = (
-                        f'[FIGURE EXCLUDED: "{caption}"]'
-                        if caption
-                        else "[FIGURE EXCLUDED: no caption detected]"
-                    )
+                    ph = _classify_image_block(block, i, blocks, page.rect.width)
                     page_text.append(ph)
 
                 elif block["type"] == 0:
@@ -176,6 +166,61 @@ class PDFExtractor:
             start = max(end - self.overlap_size, start + 1)
 
         return [c for c in chunks if c]
+
+
+def _get_block_text(block: dict) -> str:
+    return " ".join(
+        span["text"].strip()
+        for line in block.get("lines", [])
+        for span in line.get("spans", [])
+    )
+
+
+def _classify_image_block(block: dict, idx: int, blocks: list, page_width: float) -> str:
+    """
+    Returns [FIGURE EXCLUDED: ...] or [EQUATION: ...] for an image block.
+
+    Decision order (false negatives preferred over false positives):
+    1. Next text block starts with a figure marker → figure.
+    2. Surrounding text contains an equation label or variable description → equation.
+    3. Block is narrower than 80 % of page width AND taller than wide → equation.
+    4. Default → figure.
+    """
+    # 1 — Figure caption in the immediately following text block
+    if idx + 1 < len(blocks) and blocks[idx + 1]["type"] == 0:
+        candidate = _get_block_text(blocks[idx + 1])
+        if candidate.lower().startswith(("fig", "figure", "chart", "plate")):
+            return f'[FIGURE EXCLUDED: "{candidate[:80]}"]'
+
+    # 2 — Equation signals in surrounding text
+    prev_text = (
+        _get_block_text(blocks[idx - 1])
+        if idx > 0 and blocks[idx - 1]["type"] == 0
+        else ""
+    )
+    next_text = (
+        _get_block_text(blocks[idx + 1])
+        if idx + 1 < len(blocks) and blocks[idx + 1]["type"] == 0
+        else ""
+    )
+    context = f"{prev_text} {next_text}".strip()
+
+    label_match   = _EQ_LABEL_RE.search(context)
+    context_match = _EQ_CONTEXT_RE.search(context)
+
+    if label_match or context_match:
+        caption = (label_match.group(0) if label_match else context)[:80]
+        return f"[EQUATION: {caption}]"
+
+    # 3 — Size heuristic: narrow and taller than it is wide
+    x0, y0, x1, y1 = block["bbox"]
+    width  = x1 - x0
+    height = y1 - y0
+    if page_width > 0 and width < 0.8 * page_width and height > width:
+        return "[EQUATION: no caption detected]"
+
+    # 4 — Default: figure
+    return "[FIGURE EXCLUDED: no caption detected]"
 
 
 def _overlaps(a, b) -> bool:

@@ -33,4 +33,25 @@ The difference between an acceptable body and a good one:
          This allows the model to capture long-range dependencies without the sequential
          bottleneck that made RNNs slow to train on long inputs."
 
+Explanation strategy by tag — apply these when writing each slide body:
+- Definition: state the term precisely, then give one concrete example of
+  what it looks like in practice from the source material.
+- Key Concept: explain the mechanism — how it works, not just what it is.
+  If the concept has a cause and an effect, name both explicitly.
+- Example: describe the specific case from the source text. Name the inputs,
+  the process, and the outcome. Do not generalise beyond what the source says.
+- Insight: state what is surprising or non-obvious, then explain why it matters
+  for the document's central argument.
+- Takeaway: write one claim the student should be able to defend after reading
+  this deck, and identify what in the material supports it.
+- Summary: see separate instruction below.
+
+Handling equations:
+If the source text contains an [EQUATION: ...] marker, do not reproduce or
+approximate the equation notation. Instead, explain in plain language what
+the equation expresses: what it computes, what the key variables represent,
+and what the result means for the concept being taught. A student who cannot
+read mathematical notation should still understand what the equation is doing
+after reading your body text.
+
 Return ONLY the JSON object. No markdown fences, no explanation.

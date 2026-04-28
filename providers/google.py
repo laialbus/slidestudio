@@ -1,9 +1,10 @@
+import httpx
 from google import genai
 from google.api_core import exceptions as google_exceptions
 from google.genai import types
 from pydantic import BaseModel
 
-from providers.base import BaseProvider, RateLimitError
+from providers.base import BaseProvider, RateLimitError, ServerError
 from providers.config import ProviderConfig
 
 
@@ -44,6 +45,8 @@ class GoogleProvider(BaseProvider):
             return response.text
         except (google_exceptions.ResourceExhausted, google_exceptions.TooManyRequests) as exc:
             raise RateLimitError(f"HTTP 429 from Google: {exc}") from exc
+        except (httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
+            raise ServerError(f"Network error from Google API: {exc}") from exc
 
     @property
     def name(self) -> str:

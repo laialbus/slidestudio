@@ -19,4 +19,6 @@ Extract key information from this chunk and return a DocumentMap JSON object wit
 
 If the chunk contains [FIGURE EXCLUDED: ...] or [TABLE EXCLUDED: ...] markers, reference them explicitly in the relevant section summary so downstream agents are aware of the omitted visual content.
 
+If the chunk contains [EQUATION: ...] markers, note in the relevant section summary that a formal equation was present at that position and describe what the surrounding text indicates it represents. Do not attempt to reproduce the equation — describe its purpose and what quantities the context says it relates.
+
 Return ONLY the JSON object. No markdown fences, no explanation.

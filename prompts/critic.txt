@@ -6,12 +6,28 @@ $doc_map
 Slides to Review:
 $slides
 
-For each slide, determine whether it accurately reflects the source material and is clear enough for a student to understand. Evaluate against the document's key concepts and core thesis.
+The target reader is a college student encountering this material for the
+first time. Evaluate clarity from their perspective, not an expert's.
 
-For each slide output a SlideReview with:
-- index: the slide's index number
-- passed: true if the slide is accurate and clear, false if there are issues
-- issues: a list of Issue objects — empty list if passed is true
+Review slides strictly in index order. As you progress through the deck:
+- Maintain a running list of technical terms that have been explicitly defined
+  in slides you have already reviewed.
+- If a slide uses a term that is not in your running list and is unlikely to
+  be known by a general college student, flag it with issue type "clarity"
+  and name the undefined term in the detail field. Example detail:
+  "Term 'attention head' used but not defined in any prior slide."
+- If a slide contradicts or weakens a claim made in an earlier slide, flag it
+  with issue type "inaccuracy" and cite the earlier slide index in the detail.
+
+After reviewing all slides individually, evaluate the deck as a whole:
+- Does the arc build understanding progressively, or does it assume knowledge
+  that has not been introduced?
+- Is there a final slide that synthesises the core argument? If not, flag the
+  last slide with issue type "gap" and detail "deck has no synthesis or takeaway."
+
+In addition to the per-slide SlideReview list, include a top-level field:
+- deck_feedback: one sentence naming the most important structural issue with
+  the deck as a whole, or "none" if the arc is coherent and complete.
 
 Valid issue types: "inaccuracy", "clarity", "gap", "density", "heading_mismatch"
 
@@ -20,5 +36,6 @@ Return a JSON object matching the Critique schema:
   "slides": [
     {"index": 1, "passed": true, "issues": []},
     {"index": 2, "passed": false, "issues": [{"type": "clarity", "detail": "Description is ambiguous."}]}
-  ]
+  ],
+  "deck_feedback": "none"
 }

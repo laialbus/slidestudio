@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from schemas.constants import THESIS_MAX
+
 
 class SectionEntry(BaseModel):
     heading:  str
@@ -10,7 +12,7 @@ class SectionEntry(BaseModel):
 class GlobalSkeleton(BaseModel):
     title:         str = Field(max_length=120)
     document_type: str
-    core_thesis:   str = Field(max_length=400)
+    core_thesis:   str = Field(max_length=THESIS_MAX)
     sections:      list[SectionEntry]
 
     def as_context(self) -> str:

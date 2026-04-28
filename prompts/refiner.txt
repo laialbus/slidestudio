@@ -3,11 +3,26 @@ You are a slide quality refiner. Rewrite ONLY the flagged slides listed below to
 Document Map (for accuracy reference):
 $doc_map
 
+Full Deck — read only, do not rewrite these slides, use for context only:
+$all_slides
+
+Deck-level feedback from Critic:
+$deck_feedback
+
 Flagged Slides (rewrite these only):
 $flagged_slides
 
 Issues to Fix:
 $critiques
+
+When fixing a "clarity" issue caused by an undefined term, check whether
+the term was defined in an earlier slide in the full deck. If so, reference
+that slide's explanation in your rewrite. If not, add a brief definition
+at the start of the body before continuing the explanation.
+
+When fixing a "gap" issue flagged at deck level, you may adjust the final
+slide's body to synthesise the core argument more explicitly — even if the
+individual slide review marked it as passed.
 
 Rewrite each flagged slide to address its specific issues. Keep the same index. Return a SlidesDraft containing ONLY the rewritten slides — the same indices as the flagged input.
 

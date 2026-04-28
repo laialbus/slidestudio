@@ -109,15 +109,45 @@ async def run_single_deck(
     )
     _notify(on_progress, "writer", 1, 1)
 
+    # Strip the Summary/Takeaway slide before the review loop — it is generated
+    # from the completed deck afterward, not reviewed by the Critic.
+    summary_planned = next(
+        (s for s in slide_plan.slides if s.tag in ("Summary", "Takeaway")),
+        None,
+    )
+    if summary_planned:
+        content_draft = SlidesDraft(
+            title=draft.title,
+            slides=[s for s in draft.slides if s.index != summary_planned.index],
+        )
+    else:
+        print("Warning: no Summary or Takeaway slide in plan — summary generation skipped.")
+        content_draft = draft
+
     best_draft, unresolved = await run_review_loop(
-        draft, doc_map, agents["critic"], agents["refiner"], max_review_cycles,
+        content_draft, doc_map, agents["critic"], agents["refiner"], max_review_cycles,
         on_progress=on_progress,
     )
+
+    # Generate the summary from the finished, reviewed content slides.
+    if summary_planned:
+        summary_draft = await agents["writer"].write_summary(
+            completed_slides=best_draft,
+            summary_index=summary_planned.index,
+        )
+        summary_slide = summary_draft.slides[0] if summary_draft.slides else None
+    else:
+        summary_slide = None
+
     final_critique = await agents["critic"].run(doc_map=doc_map, slides=best_draft)
+
+    final_slides = [FinalSlide(**s.model_dump()) for s in best_draft.slides]
+    if summary_slide:
+        final_slides.append(FinalSlide(**summary_slide.model_dump()))
 
     slides_final = SlidesFinal(
         title=best_draft.title,
-        slides=[FinalSlide(**s.model_dump()) for s in best_draft.slides],
+        slides=final_slides,
     )
 
     if ck:
@@ -387,6 +417,7 @@ async def run_review_loop(
             doc_map=doc_map,
             slides=current,
             critique=critique,
+            deck_feedback=critique.deck_feedback,
         )
 
     return current, unresolved

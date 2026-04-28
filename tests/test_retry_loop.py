@@ -96,7 +96,7 @@ class IdentityRefiner:
     def __init__(self):
         self.call_count = 0
 
-    async def run(self, doc_map, slides, critique):
+    async def run(self, doc_map, slides, critique, deck_feedback=None):
         self.call_count += 1
         return slides
 

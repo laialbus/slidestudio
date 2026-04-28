@@ -1,6 +1,8 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from schemas.constants import DECK_FEEDBACK_MAX
 
 
 class Issue(BaseModel):
@@ -15,7 +17,8 @@ class SlideReview(BaseModel):
 
 
 class Critique(BaseModel):
-    slides: list[SlideReview]
+    slides:        list[SlideReview]
+    deck_feedback: str = Field(default="none", max_length=DECK_FEEDBACK_MAX)
 
     @property
     def all_passed(self) -> bool:
