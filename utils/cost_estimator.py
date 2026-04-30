@@ -39,10 +39,14 @@ def calculate_cost(
     )
 
 
-def analyze_pdf_cost(extraction: dict, provider: str, model: str) -> dict:
-    chunks = extraction["chunks"]
-    input_tokens  = sum(estimate_tokens(chunk) for chunk in chunks)
-    output_tokens = 250 * 15  # 250 output tokens per slide × 15 slides
+def analyze_pdf_cost(extraction, provider: str, model: str) -> dict:
+    """
+    Accepts either an ExtractionResult (Pydantic model with a .chunks attribute)
+    or a legacy dict with a "chunks" key.
+    """
+    chunks = extraction.chunks if hasattr(extraction, "chunks") else extraction["chunks"]
+    input_tokens   = sum(estimate_tokens(chunk) for chunk in chunks)
+    output_tokens  = 250 * 15  # 250 output tokens per slide × 15 slides
     estimated_cost = calculate_cost(input_tokens, output_tokens, provider, model)
     return {
         "input_tokens":    input_tokens,

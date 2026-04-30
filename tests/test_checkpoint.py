@@ -17,6 +17,7 @@ import pytest
 from pydantic import BaseModel
 
 from agents.analyst import AnalystResult
+from extractors.pdf import ExtractionResult, TocItem
 import pipeline as _pipeline_module
 from pipeline import run as pipeline_run
 from providers.base import BaseProvider
@@ -101,7 +102,15 @@ def _passing_critique(slides: SlidesDraft) -> Critique:
     return Critique(slides=[SlideReview(index=s.index, passed=True) for s in slides.slides])
 
 
-_FAKE_EXTRACTION = {"headers": ["Introduction"], "chunks": ["chunk text"]}
+_FAKE_EXTRACTION = ExtractionResult(
+    markdown="",
+    toc_items=[TocItem(level=1, heading="Introduction", page=1)],
+    chunks=["chunk text"],
+    images=[],
+    page_count=1,
+    char_count=len("chunk text"),
+    ocr_used=False,
+)
 
 
 # ──────────────────────────────────────────────────────────────

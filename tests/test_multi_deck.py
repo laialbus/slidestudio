@@ -68,7 +68,7 @@ class TestRouteMultiDeckDelegation:
         with patch("pipeline.run_single_deck", new_callable=AsyncMock) as mock_rsd:
             mock_rsd.return_value = (_slides_final(), [], Path("outputs/test.json"))
             result, _, _ = _run(route(
-                "Test Paper", skeleton, _doc_map(), ["chunk"],
+                "Test Paper", skeleton, _doc_map(), ["chunk"], [],
                 _make_agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
                 total_chars=50_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
             ))
@@ -79,7 +79,7 @@ class TestRouteMultiDeckDelegation:
         with patch("pipeline.run_single_deck", new_callable=AsyncMock) as mock_rsd:
             mock_rsd.return_value = (_slides_final(), [], tmp_path / "test.json")
             result, _, _ = _run(route(
-                "Test Paper", skeleton, _doc_map(), ["chunk"],
+                "Test Paper", skeleton, _doc_map(), ["chunk"], [],
                 _make_agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
                 total_chars=50_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
             ))
@@ -96,7 +96,7 @@ class TestRunMultiDeckOrchestration:
         with patch("pipeline.run_single_deck", new_callable=AsyncMock) as mock_rsd:
             mock_rsd.return_value = (_slides_final(), [], Path("outputs/test.json"))
             _run(run_multi_deck(
-                "Test", _doc_map(), skeleton, ["chunk"],
+                "Test", _doc_map(), skeleton, ["chunk"], [],
                 _make_agents(), max_review_cycles=1,
                 debug=False, output_dir=tmp_path,
             ))
@@ -107,7 +107,7 @@ class TestRunMultiDeckOrchestration:
         with patch("pipeline.run_single_deck", new_callable=AsyncMock) as mock_rsd:
             mock_rsd.return_value = (_slides_final(), [], Path("outputs/test.json"))
             _run(run_multi_deck(
-                "Test", _doc_map(), skeleton, ["chunk"],
+                "Test", _doc_map(), skeleton, ["chunk"], [],
                 _make_agents(), max_review_cycles=1,
                 debug=False, output_dir=tmp_path,
             ))
@@ -120,7 +120,7 @@ class TestRunMultiDeckOrchestration:
         with patch("pipeline.run_single_deck", new_callable=AsyncMock) as mock_rsd:
             mock_rsd.return_value = (_slides_final(), [], Path("outputs/test.json"))
             _run(run_multi_deck(
-                "Test", _doc_map(), skeleton, ["chunk"],
+                "Test", _doc_map(), skeleton, ["chunk"], [],
                 _make_agents(), max_review_cycles=1,
                 debug=False, output_dir=tmp_path,
             ))
@@ -145,7 +145,7 @@ class TestBlastRadius:
         with patch("pipeline.run_single_deck", new_callable=AsyncMock) as mock_rsd:
             mock_rsd.side_effect = self._make_side_effect()
             result, _, _ = _run(run_multi_deck(
-                "Test", _doc_map(), skeleton, ["chunk"],
+                "Test", _doc_map(), skeleton, ["chunk"], [],
                 _make_agents(), max_review_cycles=1,
                 debug=False, output_dir=tmp_path,
             ))
@@ -156,7 +156,7 @@ class TestBlastRadius:
         with patch("pipeline.run_single_deck", new_callable=AsyncMock) as mock_rsd:
             mock_rsd.side_effect = self._make_side_effect()
             result, _, _ = _run(run_multi_deck(
-                "Test", _doc_map(), skeleton, ["chunk"],
+                "Test", _doc_map(), skeleton, ["chunk"], [],
                 _make_agents(), max_review_cycles=1,
                 debug=False, output_dir=tmp_path,
             ))
@@ -167,7 +167,7 @@ class TestBlastRadius:
         with patch("pipeline.run_single_deck", new_callable=AsyncMock) as mock_rsd:
             mock_rsd.side_effect = self._make_side_effect()
             result, _, _ = _run(run_multi_deck(
-                "Test", _doc_map(), skeleton, ["chunk"],
+                "Test", _doc_map(), skeleton, ["chunk"], [],
                 _make_agents(), max_review_cycles=1,
                 debug=False, output_dir=tmp_path,
             ))

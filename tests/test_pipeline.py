@@ -111,10 +111,13 @@ class StubWriter:
         self.call_log  = call_log
         self.call_count = 0
 
-    async def run(self, slide_plan, doc_map, chunks):
+    async def run(self, slide_plan, doc_map, chunks, images=None):
         if self.call_log is not None:
             self.call_log.append("writer")
         self.call_count += 1
+        return _slides_draft()
+
+    async def write_summary(self, completed_slides, summary_index):
         return _slides_draft()
 
 
@@ -135,7 +138,7 @@ class StubRefiner:
         self.call_log  = call_log
         self.call_count = 0
 
-    async def run(self, doc_map, slides, critique):
+    async def run(self, doc_map, slides, critique, deck_feedback=None):
         if self.call_log is not None:
             self.call_log.append("refiner")
         self.call_count += 1
@@ -168,7 +171,7 @@ class TestRoute:
     def test_returns_slides_final_when_chapters_at_threshold(self, tmp_path):
         skeleton = _skeleton_with_chapters(3)
         result, _, _ = _run(route(
-            "Test Paper", skeleton, _doc_map(), ["chunk"],
+            "Test Paper", skeleton, _doc_map(), ["chunk"], [],
             _agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
             total_chars=50_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
@@ -177,7 +180,7 @@ class TestRoute:
     def test_returns_slides_final_when_chapters_below_threshold(self, tmp_path):
         skeleton = _skeleton_with_chapters(2)
         result, _, _ = _run(route(
-            "Test Paper", skeleton, _doc_map(), ["chunk"],
+            "Test Paper", skeleton, _doc_map(), ["chunk"], [],
             _agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
             total_chars=50_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
@@ -186,7 +189,7 @@ class TestRoute:
     def test_returns_deck_index_when_chapters_exceed_threshold(self, tmp_path):
         skeleton = _skeleton_with_chapters(4)
         result, _, _ = _run(route(
-            "Test Paper", skeleton, _doc_map(), ["chunk"],
+            "Test Paper", skeleton, _doc_map(), ["chunk"], [],
             _agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
             total_chars=50_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
@@ -196,7 +199,7 @@ class TestRoute:
         # exactly threshold → single-deck (not raised)
         skeleton = _skeleton_with_chapters(3)
         result, _, _ = _run(route(
-            "Test Paper", skeleton, _doc_map(), ["chunk"],
+            "Test Paper", skeleton, _doc_map(), ["chunk"], [],
             _agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
             total_chars=50_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
@@ -205,7 +208,7 @@ class TestRoute:
     def test_threshold_plus_one_returns_deck_index(self, tmp_path):
         skeleton = _skeleton_with_chapters(4)
         result, _, _ = _run(route(
-            "Test Paper", skeleton, _doc_map(), ["chunk"],
+            "Test Paper", skeleton, _doc_map(), ["chunk"], [],
             _agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
             total_chars=50_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
@@ -218,55 +221,55 @@ class TestRoute:
 
 class TestWriteOutput:
     def test_writes_json_at_slugified_path(self, tmp_path):
-        write_output(_slides_final(), "My Test Paper", False, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "My Test Paper", False, tmp_path, _intermediates())
         assert (tmp_path / "my_test_paper.json").exists()
 
     def test_output_is_valid_json(self, tmp_path):
-        write_output(_slides_final(), "My Test Paper", False, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "My Test Paper", False, tmp_path, _intermediates())
         data = json.loads((tmp_path / "my_test_paper.json").read_text())
         assert "slides" in data
 
     def test_hostile_title_slugified_correctly(self, tmp_path):
         hostile = "Chapter 1: The /\\ File * System?"
-        write_output(_slides_final(), hostile, False, tmp_path, _intermediates())
+        write_output(_slides_final(), [], hostile, False, tmp_path, _intermediates())
         slug = slugify(hostile)
         assert (tmp_path / f"{slug}.json").exists()
 
     def test_hostile_title_output_is_valid_json(self, tmp_path):
         hostile = "Chapter 1: The /\\ File * System?"
-        write_output(_slides_final(), hostile, False, tmp_path, _intermediates())
+        write_output(_slides_final(), [], hostile, False, tmp_path, _intermediates())
         slug = slugify(hostile)
         data = json.loads((tmp_path / f"{slug}.json").read_text())
         assert "slides" in data
 
     def test_no_debug_dir_when_debug_false(self, tmp_path):
-        write_output(_slides_final(), "Test", False, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "Test", False, tmp_path, _intermediates())
         assert not (tmp_path / "debug").exists()
 
     def test_debug_creates_slide_plan_file(self, tmp_path):
-        write_output(_slides_final(), "Test Paper", True, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "Test Paper", True, tmp_path, _intermediates())
         debug_dir = tmp_path / "debug" / slugify("Test Paper")
         assert (debug_dir / "01_slide_plan.json").exists()
 
     def test_debug_creates_slides_draft_file(self, tmp_path):
-        write_output(_slides_final(), "Test Paper", True, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "Test Paper", True, tmp_path, _intermediates())
         debug_dir = tmp_path / "debug" / slugify("Test Paper")
         assert (debug_dir / "02_slides_draft.json").exists()
 
     def test_debug_creates_critique_file(self, tmp_path):
-        write_output(_slides_final(), "Test Paper", True, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "Test Paper", True, tmp_path, _intermediates())
         debug_dir = tmp_path / "debug" / slugify("Test Paper")
         assert (debug_dir / "03_critique.json").exists()
 
     def test_debug_files_are_valid_json(self, tmp_path):
-        write_output(_slides_final(), "Test Paper", True, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "Test Paper", True, tmp_path, _intermediates())
         debug_dir = tmp_path / "debug" / slugify("Test Paper")
         for fname in ["01_slide_plan.json", "02_slides_draft.json", "03_critique.json"]:
             data = json.loads((debug_dir / fname).read_text())
             assert isinstance(data, dict)
 
     def test_debug_dir_uses_slugified_title(self, tmp_path):
-        write_output(_slides_final(), "My Paper Title", True, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "My Paper Title", True, tmp_path, _intermediates())
         assert (tmp_path / "debug" / "my_paper_title").is_dir()
 
 
@@ -277,14 +280,14 @@ class TestWriteOutput:
 class TestRunSingleDeckSequence:
     def test_returns_slides_final(self, tmp_path):
         result, _, _ = _run(run_single_deck(
-            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"],
+            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"], [],
             _agents(), max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
         assert isinstance(result, SlidesFinal)
 
     def test_returns_unresolved_list(self, tmp_path):
         _, unresolved, _ = _run(run_single_deck(
-            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"],
+            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"], [],
             _agents(), max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
         assert isinstance(unresolved, list)
@@ -292,7 +295,7 @@ class TestRunSingleDeckSequence:
     def test_planner_called_before_writer(self, tmp_path):
         call_log = []
         _run(run_single_deck(
-            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"],
+            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"], [],
             _agents(call_log), max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
         assert call_log.index("planner") < call_log.index("writer")
@@ -300,7 +303,7 @@ class TestRunSingleDeckSequence:
     def test_writer_called_before_critic(self, tmp_path):
         call_log = []
         _run(run_single_deck(
-            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"],
+            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"], [],
             _agents(call_log), max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
         assert call_log.index("writer") < call_log.index("critic")
@@ -308,7 +311,7 @@ class TestRunSingleDeckSequence:
     def test_planner_called_exactly_once(self, tmp_path):
         agents = _agents()
         _run(run_single_deck(
-            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"],
+            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"], [],
             agents, max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
         assert agents["planner"].call_count == 1
@@ -316,21 +319,21 @@ class TestRunSingleDeckSequence:
     def test_writer_called_exactly_once(self, tmp_path):
         agents = _agents()
         _run(run_single_deck(
-            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"],
+            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"], [],
             agents, max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
         assert agents["writer"].call_count == 1
 
     def test_writes_output_file(self, tmp_path):
         _run(run_single_deck(
-            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"],
+            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"], [],
             _agents(), max_review_cycles=1, debug=False, output_dir=tmp_path,
         ))
         assert (tmp_path / f"{slugify('Test Paper')}.json").exists()
 
     def test_debug_writes_all_intermediate_files(self, tmp_path):
         _run(run_single_deck(
-            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"],
+            "Test Paper", _doc_map(), _skeleton_with_chapters(1), ["chunk"], [],
             _agents(), max_review_cycles=1, debug=True, output_dir=tmp_path,
         ))
         debug_dir = tmp_path / "debug" / slugify("Test Paper")

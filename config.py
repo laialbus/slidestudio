@@ -2,14 +2,14 @@
 # Edit this file to change provider, model, or pipeline behavior.
 # All values here are read by cli.py and passed into the pipeline.
 
-PROVIDER = "google-fast"  # Options: "anthropic", "openai", "groq", "ollama", "google", "google-fast"
+PROVIDER = "google"  # Options: "anthropic", "openai", "groq", "ollama", "google", "google-fast"
 
 MODELS = {
     "anthropic":   "claude-sonnet-4-20250514",
     "openai":      "gpt-4o",
     "groq":        "llama-3.1-70b-versatile",
     "ollama":      "llama3.1",
-    "google":      "gemini-3.1-pro-preview",     # "gemini-2.5-flash-lite"
+    "google":      "gemini-2.5-flash-lite",     # "gemini-2.5-flash-lite"
     "google-fast": "gemma-4-31b-it",
 }
 

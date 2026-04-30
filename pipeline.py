@@ -5,8 +5,9 @@ from pathlib import Path
 from typing import Callable
 
 from agents.analyst import AnalystAgent, AnalystResult
-from extractors.pdf import PDFExtractor
+from extractors.pdf import ExtractionResult, PDFExtractor
 from schemas.deck_index import DeckEntry, DeckIndex
+from schemas.deck_output import DeckOutput, ImageEntry
 from schemas.document_map import DocumentMap
 from schemas.global_skeleton import GlobalSkeleton, SectionEntry
 from schemas.slide_plan import SlidePlan
@@ -43,8 +44,36 @@ def _write_debug(title: str, output_dir: Path | str, intermediates: dict) -> Non
             )
 
 
+def _build_deck_output(
+    slides_final: SlidesFinal,
+    all_images: list[dict],
+    deck_type: str = "single_deck",
+) -> DeckOutput:
+    """Build a DeckOutput, filtering images to only those referenced by the slides."""
+    referenced_ids = {
+        s.image_ref for s in slides_final.slides if s.image_ref is not None
+    }
+    deck_images = [
+        ImageEntry(
+            index=img["index"],
+            caption=img.get("caption", ""),
+            data_uri=img["data_uri"],
+            page=img.get("page", 0),
+        )
+        for img in all_images
+        if img["index"] in referenced_ids
+    ]
+    return DeckOutput(
+        title=slides_final.title,
+        type=deck_type,
+        slides=slides_final.slides,
+        images=deck_images,
+    )
+
+
 def write_output(
     slides_final: SlidesFinal,
+    all_images: list[dict],
     title: str,
     debug: bool,
     output_dir: Path | str,
@@ -54,7 +83,8 @@ def write_output(
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / f"{slug}.json"
-    output_path.write_text(slides_final.model_dump_json(indent=2), encoding="utf-8")
+    deck_output = _build_deck_output(slides_final, all_images)
+    output_path.write_text(deck_output.model_dump_json(indent=2), encoding="utf-8")
     if debug:
         _write_debug(title, out_dir, intermediates)
     return output_path
@@ -65,6 +95,7 @@ async def run_single_deck(
     doc_map,
     skeleton,
     chunks: list[str],
+    images: list[dict],
     agents: dict,
     max_review_cycles: int,
     debug: bool,
@@ -91,7 +122,7 @@ async def run_single_deck(
             _notify(on_progress, "writer", 1, 1)
             if max_review_cycles > 0:
                 _notify(on_progress, "review", max_review_cycles, max_review_cycles)
-            output_path = write_output(slides_final_cp, title, debug, output_dir, {}) if _write else None
+            output_path = write_output(slides_final_cp, images, title, debug, output_dir, {}) if _write else None
             return slides_final_cp, [], output_path
 
     # Planner — load from checkpoint or run
@@ -105,7 +136,7 @@ async def run_single_deck(
     _notify(on_progress, "planner", 1, 1)
 
     draft = await agents["writer"].run(
-        slide_plan=slide_plan, doc_map=doc_map, chunks=chunks
+        slide_plan=slide_plan, doc_map=doc_map, chunks=chunks, images=images
     )
     _notify(on_progress, "writer", 1, 1)
 
@@ -160,7 +191,7 @@ async def run_single_deck(
     }
 
     if _write:
-        output_path = write_output(slides_final, title, debug, output_dir, intermediates)
+        output_path = write_output(slides_final, images, title, debug, output_dir, intermediates)
     else:
         if debug:
             _write_debug(title, output_dir, intermediates)
@@ -172,6 +203,7 @@ async def run_single_deck(
 def write_deck_index(
     title: str,
     decks_data: list[tuple],
+    images: list[dict],
     agents: dict,
     output_dir: Path | str,
 ) -> tuple[DeckIndex, Path]:
@@ -185,8 +217,9 @@ def write_deck_index(
     decks = []
     for i, (section, slides_final) in enumerate(decks_data, start=1):
         filename = f"{i:02d}_{slugify(section.heading)}.json"
+        deck_output = _build_deck_output(slides_final, images)
         (out_dir / filename).write_text(
-            slides_final.model_dump_json(indent=2), encoding="utf-8"
+            deck_output.model_dump_json(indent=2), encoding="utf-8"
         )
         decks.append(DeckEntry(chapter_title=section.heading, file=filename))
 
@@ -208,6 +241,7 @@ async def run_multi_deck(
     doc_map,
     skeleton,
     chunks: list[str],
+    images: list[dict],
     agents: dict,
     max_review_cycles: int,
     debug: bool,
@@ -225,6 +259,7 @@ async def run_multi_deck(
             doc_map=doc_map,
             skeleton=skeleton,
             chunks=chunks,
+            images=images,
             agents=agents,
             max_review_cycles=max_review_cycles,
             debug=debug,
@@ -247,7 +282,7 @@ async def run_multi_deck(
         if not isinstance(result, Exception)
     ]
 
-    deck_index, index_path = write_deck_index(title, decks_data, agents, output_dir)
+    deck_index, index_path = write_deck_index(title, decks_data, images, agents, output_dir)
     return deck_index, [], index_path
 
 
@@ -270,6 +305,7 @@ async def route(
     skeleton,
     doc_map,
     chunks: list[str],
+    images: list[dict],
     agents: dict,
     multi_deck_chapter_threshold: int,
     multi_deck_length_threshold: int,
@@ -291,13 +327,13 @@ async def route(
 
     if is_multi:
         return await run_multi_deck(
-            title, doc_map, skeleton, chunks, agents,
+            title, doc_map, skeleton, chunks, images, agents,
             max_review_cycles, debug, output_dir,
             checkpoint=checkpoint,
             on_progress=on_progress,
         )
     return await run_single_deck(
-        title, doc_map, skeleton, chunks, agents,
+        title, doc_map, skeleton, chunks, images, agents,
         max_review_cycles, debug, output_dir,
         checkpoint=checkpoint,
         on_progress=on_progress,
@@ -331,8 +367,20 @@ async def run(
     on_progress: ProgressCallback = None,
 ):
     extractor = PDFExtractor(chunk_size=chunk_size, overlap_size=overlap_size)
-    extraction = extractor.extract(str(file_path))
+    extraction: ExtractionResult = extractor.extract(str(file_path))
     _notify(on_progress, "extract", 1, 1)
+
+    # Convert images to plain dicts for in-memory passing (agents never import
+    # extractor models per CLAUDE.md constraints).
+    images = [img.model_dump() for img in extraction.images]
+
+    # Build the extraction dict the Analyst understands.
+    # toc_items allows _build_skeleton to skip the LLM call for structured PDFs.
+    analyst_input = {
+        "toc_items": [item.model_dump() for item in extraction.toc_items],
+        "headers":   [item.heading for item in extraction.toc_items],
+        "chunks":    extraction.chunks,
+    }
 
     ck = checkpoint
 
@@ -343,7 +391,7 @@ async def run(
     if skeleton_cp is not None and doc_map_cp is not None:
         analyst_result = AnalystResult(skeleton=skeleton_cp, doc_map=doc_map_cp)
     else:
-        analyst_result = await AnalystAgent(provider).run(extraction)
+        analyst_result = await AnalystAgent(provider).run(analyst_input)
         if ck:
             ck.save("skeleton", analyst_result.skeleton)
             ck.save("doc_map", analyst_result.doc_map)
@@ -352,8 +400,8 @@ async def run(
     skeleton = analyst_result.skeleton
     doc_map  = analyst_result.doc_map
 
-    chunks = extraction["chunks"]
-    total_chars = sum(len(c) for c in chunks)
+    chunks = extraction.chunks
+    total_chars = extraction.char_count
 
     if debug:
         level_counts: dict[int, int] = {}
@@ -375,6 +423,7 @@ async def run(
         skeleton=skeleton,
         doc_map=doc_map,
         chunks=chunks,
+        images=images,
         agents=agents,
         multi_deck_chapter_threshold=multi_deck_chapter_threshold,
         multi_deck_length_threshold=multi_deck_length_threshold,

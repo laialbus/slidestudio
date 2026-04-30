@@ -65,7 +65,7 @@ def _route(skeleton, total_chars, chapter_threshold=3, length_threshold=40_000, 
     with patch("pipeline.run_single_deck", new_callable=AsyncMock) as mock_rsd:
         mock_rsd.return_value = (_slides_final(), [], Path("outputs/test.json"))
         return _run(route(
-            "Test", skeleton, _doc_map(), ["chunk"],
+            "Test", skeleton, _doc_map(), ["chunk"], [],
             _agents(),
             multi_deck_chapter_threshold=chapter_threshold,
             multi_deck_length_threshold=length_threshold,

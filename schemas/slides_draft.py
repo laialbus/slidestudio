@@ -4,10 +4,12 @@ from schemas.constants import SLIDE_BODY_MAX
 
 
 class DraftSlide(BaseModel):
-    index:   int
-    tag:     str
-    heading: str
-    body:    str = Field(min_length=1, max_length=SLIDE_BODY_MAX)
+    index:     int
+    tag:       str
+    heading:   str
+    body:      str      = Field(min_length=1, max_length=SLIDE_BODY_MAX)
+    latex:     str | None = None   # verbatim LaTeX for formula-centric slides
+    image_ref: int | None = None   # index into DeckOutput.images
 
 
 class SlidesDraft(BaseModel):

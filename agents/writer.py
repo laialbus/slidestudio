@@ -22,10 +22,11 @@ class WriterAgent(BaseAgent):
         slide_plan: SlidePlan,
         doc_map: DocumentMap,
         chunks: list[str],
+        images: list[dict] | None = None,
     ) -> SlidesDraft:
         batches = self._batch(slide_plan.slides)
         tasks = [
-            self._write_batch(batch, doc_map, chunks)
+            self._write_batch(batch, doc_map, chunks, images or [])
             for batch in batches
         ]
         batch_drafts = list(await asyncio.gather(*tasks))
@@ -59,6 +60,7 @@ class WriterAgent(BaseAgent):
         batch: list[PlannedSlide],
         doc_map: DocumentMap,
         chunks: list[str],
+        images: list[dict],
     ) -> SlidesDraft:
         needed_ids = {idx for slide in batch for idx in slide.chunk_indices}
         source_text = "\n\n---\n\n".join(
@@ -70,9 +72,21 @@ class WriterAgent(BaseAgent):
             f"Slide {s.index} [{s.tag}] — {s.source_section}: {s.intention}"
             for s in batch
         )
+        images_context = _format_images_context(images)
         prompt = Template(self.prompt_template).safe_substitute(
             doc_map=doc_map.model_dump_json(indent=2),
             batch_plan=batch_plan,
             source_text=source_text,
+            images_context=images_context,
         )
         return await self._call(prompt, SlidesDraft)
+
+
+def _format_images_context(images: list[dict]) -> str:
+    if not images:
+        return "AVAILABLE IMAGES: none"
+    lines = ["AVAILABLE IMAGES (set image_ref to the integer index, or null if none applies):"]
+    for img in images:
+        caption = img.get("caption", "") or "no caption"
+        lines.append(f"  - Index {img['index']}: \"{caption}\" (page {img.get('page', '?')})")
+    return "\n".join(lines)

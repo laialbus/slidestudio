@@ -4,6 +4,7 @@ from pydantic import ValidationError
 from schemas.chapter_map import ChapterMap
 from schemas.critique import Critique, Issue, SlideReview
 from schemas.deck_index import DeckEntry, DeckIndex
+from schemas.deck_output import DeckOutput, ImageEntry
 from schemas.document_map import DocumentMap, Section
 from schemas.global_skeleton import GlobalSkeleton, SectionEntry
 from schemas.slide_plan import PlannedSlide, SlidePlan
@@ -305,3 +306,52 @@ class TestDeckIndex:
             decks=[],
         )
         assert idx.type == "multi_deck"
+
+
+# ──────────────────────────────────────────────────────────────
+# DeckOutput
+# ──────────────────────────────────────────────────────────────
+
+class TestDeckOutput:
+    def _slide(self) -> FinalSlide:
+        return FinalSlide(index=1, heading="Slide 1", body="Body text.", tag="Key Concept")
+
+    def test_valid_construction_no_images(self):
+        out = DeckOutput(title="My Deck", slides=[self._slide()])
+        assert out.title == "My Deck"
+        assert out.type == "single_deck"
+        assert out.images == []
+
+    def test_type_defaults_to_single_deck(self):
+        out = DeckOutput(title="T", slides=[self._slide()])
+        assert out.type == "single_deck"
+
+    def test_images_list_populated(self):
+        img = ImageEntry(
+            index=0, caption="Figure 1", data_uri="data:image/png;base64,abc", page=1
+        )
+        out = DeckOutput(title="T", slides=[self._slide()], images=[img])
+        assert len(out.images) == 1
+        assert out.images[0].data_uri.startswith("data:image/")
+
+    def test_slide_latex_and_image_ref_accepted(self):
+        slide = FinalSlide(
+            index=1, heading="Equations", body="Body.",
+            tag="Key Concept", latex=r"\alpha + \beta = \gamma", image_ref=0,
+        )
+        out = DeckOutput(title="T", slides=[slide])
+        assert out.slides[0].latex is not None
+        assert out.slides[0].image_ref == 0
+
+    def test_slide_latex_optional_null(self):
+        slide = FinalSlide(index=1, heading="H", body="B.", tag="Definition")
+        assert slide.latex is None
+        assert slide.image_ref is None
+
+    def test_draft_slide_accepts_latex_and_image_ref(self):
+        draft = DraftSlide(
+            index=1, heading="H", body="B.", tag="Key Concept",
+            latex=r"\sum_{i=0}^{n} x_i", image_ref=2,
+        )
+        assert draft.latex == r"\sum_{i=0}^{n} x_i"
+        assert draft.image_ref == 2

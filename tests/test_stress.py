@@ -13,7 +13,7 @@ from agents.critic import CriticAgent
 from agents.planner import PlannerAgent
 from agents.refiner import RefinerAgent
 from agents.writer import WriterAgent
-from extractors.pdf import PDFExtractor
+from extractors.pdf import PDFExtractor, _chunk_by_chars
 from pipeline import run_single_deck
 from providers.base import BaseProvider
 from providers.config import ProviderConfig
@@ -109,22 +109,19 @@ def _skeleton() -> GlobalSkeleton:
 
 class TestChunkScale:
     def test_chunks_500k_string_without_hanging(self):
-        extractor = PDFExtractor(chunk_size=8_000, overlap_size=1_500)
-        big_text  = "word " * 100_000   # 500 000 chars
-        chunks    = extractor._chunk(big_text)
+        big_text = "word " * 100_000   # 500 000 chars
+        chunks   = _chunk_by_chars(big_text, chunk_size=8_000, overlap_size=1_500)
         assert len(chunks) > 0
 
     def test_chunks_500k_string_produces_reasonable_count(self):
-        extractor = PDFExtractor(chunk_size=8_000, overlap_size=1_500)
-        big_text  = "word " * 100_000
-        chunks    = extractor._chunk(big_text)
+        big_text = "word " * 100_000
+        chunks   = _chunk_by_chars(big_text, chunk_size=8_000, overlap_size=1_500)
         # With 8000-char chunks and 1500 overlap, ~500000/6500 ≈ 77 chunks
         assert 50 <= len(chunks) <= 200
 
     def test_each_chunk_respects_size_limit(self):
-        extractor = PDFExtractor(chunk_size=8_000, overlap_size=1_500)
-        big_text  = "word " * 100_000
-        chunks    = extractor._chunk(big_text)
+        big_text = "word " * 100_000
+        chunks   = _chunk_by_chars(big_text, chunk_size=8_000, overlap_size=1_500)
         for chunk in chunks:
             assert len(chunk) <= 8_000
 
@@ -148,6 +145,7 @@ class TestKillSwitch:
             doc_map=_doc_map(),
             skeleton=_skeleton(),
             chunks=["chunk text here"],
+            images=[],
             agents=agents,
             max_review_cycles=2,
             debug=False,
@@ -171,6 +169,7 @@ class TestKillSwitch:
             doc_map=_doc_map(),
             skeleton=_skeleton(),
             chunks=["chunk"],
+            images=[],
             agents=agents,
             max_review_cycles=2,
             debug=False,

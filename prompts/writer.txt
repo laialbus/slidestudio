@@ -15,6 +15,8 @@ $batch_plan
 SOURCE TEXT (only the chunks referenced by this batch):
 $source_text
 
+$images_context
+
 For each slide in the batch plan, produce a DraftSlide. Return a SlidesDraft JSON object with:
 - title: concise deck title
 - slides: list of DraftSlide objects, each with:
@@ -25,6 +27,13 @@ For each slide in the batch plan, produce a DraftSlide. Return a SlidesDraft JSO
     Define terms, describe how things work, and give the reader enough to
     understand — not just to recognise that something was mentioned.
     Ground every claim in the source text. Do not add information not present there.
+    Never write "see Figure X" or "as shown above" — the body must stand alone.
+  - latex: (optional) a verbatim LaTeX string if a formula is central to this slide's
+    claim. Copy the LaTeX expression exactly from the source text — never paraphrase
+    or reconstruct equations from memory. Omit this field (null) if no formula applies.
+  - image_ref: (optional) the integer index from AVAILABLE IMAGES if a figure caption
+    clearly matches this slide's topic. Set only when the match is certain — never
+    speculatively. Omit (null) if no image applies.
 
 The difference between an acceptable body and a good one:
   Acceptable: "The Transformer uses self-attention instead of recurrence."
@@ -46,12 +55,11 @@ Explanation strategy by tag — apply these when writing each slide body:
   this deck, and identify what in the material supports it.
 - Summary: see separate instruction below.
 
-Handling equations:
-If the source text contains an [EQUATION: ...] marker, do not reproduce or
-approximate the equation notation. Instead, explain in plain language what
-the equation expresses: what it computes, what the key variables represent,
-and what the result means for the concept being taught. A student who cannot
-read mathematical notation should still understand what the equation is doing
-after reading your body text.
+Handling equations in source text:
+If the source text contains a LaTeX expression ($$...$$, \[...\], or inline $...$),
+copy it verbatim into the `latex` field. In the `body`, explain in plain language what
+the equation expresses: what it computes, what the key variables represent, and what
+the result means for the concept being taught. A student who cannot read mathematical
+notation should understand the equation from your body text alone.
 
 Return ONLY the JSON object. No markdown fences, no explanation.

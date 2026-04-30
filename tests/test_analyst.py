@@ -389,3 +389,91 @@ class TestConcurrentChunkAnalysis:
             "chunks":  ["text"] * n,
         }))
         assert stub._indices.get(ChapterMap, 0) == 2
+
+
+# ──────────────────────────────────────────────────────────────
+# TOC-based skeleton — zero LLM calls for structured PDFs
+# ──────────────────────────────────────────────────────────────
+
+class TestTocBasedSkeleton:
+    """
+    When toc_items is present and non-empty in the extraction dict,
+    _build_skeleton must build the GlobalSkeleton from the TOC without
+    making any LLM call (Change 5 in INSTRUCTIONS.md).
+    """
+
+    def _make_stub_no_skeleton(self) -> StubProvider:
+        """Stub with DocumentMap responses only — GlobalSkeleton is NOT registered."""
+        doc = _doc_map()
+        return StubProvider({DocumentMap: [doc]})
+
+    def _toc_items(self) -> list[dict]:
+        return [
+            {"level": 1, "heading": "Chapter 1: Introduction", "page": 1},
+            {"level": 2, "heading": "Section 1.1",             "page": 2},
+            {"level": 1, "heading": "Chapter 2: Methods",      "page": 3},
+        ]
+
+    def test_no_llm_call_for_skeleton_when_toc_present(self):
+        stub  = self._make_stub_no_skeleton()
+        agent = AnalystAgent(stub)
+        # If the LLM were called for GlobalSkeleton it would raise KeyError
+        # (GlobalSkeleton not in stub._responses).
+        result = _run(agent.run({
+            "toc_items": self._toc_items(),
+            "chunks":    ["single chunk"],
+        }))
+        assert isinstance(result, AnalystResult)
+        assert GlobalSkeleton not in stub._indices
+
+    def test_toc_sections_appear_in_skeleton(self):
+        stub  = self._make_stub_no_skeleton()
+        agent = AnalystAgent(stub)
+        result = _run(agent.run({
+            "toc_items": self._toc_items(),
+            "chunks":    ["chunk text"],
+        }))
+        headings = {s.heading for s in result.skeleton.sections}
+        assert "Chapter 1: Introduction" in headings
+        assert "Chapter 2: Methods" in headings
+
+    def test_toc_levels_preserved_in_skeleton(self):
+        stub  = self._make_stub_no_skeleton()
+        agent = AnalystAgent(stub)
+        result = _run(agent.run({
+            "toc_items": self._toc_items(),
+            "chunks":    ["chunk text"],
+        }))
+        level_map = {s.heading: s.level for s in result.skeleton.sections}
+        assert level_map.get("Section 1.1") == 2
+
+    def test_empty_toc_items_falls_back_to_llm(self):
+        """Empty toc_items must trigger the LLM path (GlobalSkeleton called)."""
+        sk   = _skeleton()
+        doc  = _doc_map()
+        stub = StubProvider({
+            GlobalSkeleton: [sk],
+            DocumentMap:    [doc],
+        })
+        agent = AnalystAgent(stub)
+        _run(agent.run({
+            "toc_items": [],        # empty → LLM fallback
+            "headers":   ["Intro"],
+            "chunks":    ["chunk"],
+        }))
+        assert stub._indices.get(GlobalSkeleton, 0) == 1
+
+    def test_missing_toc_key_falls_back_to_llm(self):
+        """toc_items key absent from dict → LLM fallback still works."""
+        sk   = _skeleton()
+        doc  = _doc_map()
+        stub = StubProvider({
+            GlobalSkeleton: [sk],
+            DocumentMap:    [doc],
+        })
+        agent = AnalystAgent(stub)
+        _run(agent.run({
+            "headers": ["Intro"],
+            "chunks":  ["chunk"],
+        }))
+        assert stub._indices.get(GlobalSkeleton, 0) == 1
