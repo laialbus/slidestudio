@@ -13,15 +13,25 @@ from pydantic import BaseModel
 _CHUNK_CHAR_LIMIT = 8_000
 _OVERLAP_SIZE     = 1_500
 
-# Image filters
-_MAX_IMAGE_BYTES = 512 * 1_024   # 512 KB — likely page backgrounds above this
-_MIN_IMAGE_DIM   = 32            # px — ignore tiny icons/decorations
+# Image filters / rendering
+_MAX_IMAGE_BYTES       = 512 * 1_024  # 512 KB — cap rendered figure size
+_FIGURE_SEARCH_WINDOW  = 500          # pt — vertical scan window from caption edge
+_HAIRLINE_MAX_HEIGHT   = 2.0          # pt — stroke-only paths below this are decorative
+_CAPTION_PADDING       = 3.0          # pt — safety margin around rendered figure rect
+_CAPTION_MERGE_GAP     = 8.0          # pt — max y-gap to absorb continuation caption blocks
+_DRAWING_OVERLAP_FRAC  = 0.4          # drawings must x-overlap caption by this fraction
+_RENDER_DPI            = 150
+_RENDER_DPI_FALLBACK   = 75
+_MIN_FIGURE_HEIGHT     = 20.0         # pt — discard rects too short to be a real figure
 
-# Caption detection (checked in adjacent text blocks)
+# Caption pattern — anchored to the start of a text block
 _CAPTION_RE = re.compile(r"^(fig\.?|figure|chart|table)\b", re.IGNORECASE)
 
 # Heading boundary: only # and ## (not ### or deeper)
 _HEADING_LINE_RE = re.compile(r"^(#{1,2})(?!#)\s", re.MULTILINE)
+
+# Figure ID tag — injected into markdown, scanned back from chunks
+_FIGURE_ID_RE = re.compile(r"\[FIGURE_ID:\s*(\d+)\]")
 
 # Table validation thresholds
 _MAX_TABLE_ROWS   = 70
@@ -47,13 +57,14 @@ class ImageRecord(BaseModel):
 
 
 class ExtractionResult(BaseModel):
-    markdown:   str
-    toc_items:  list[TocItem]
-    chunks:     list[str]
-    images:     list[ImageRecord]
-    page_count: int
-    char_count: int
-    ocr_used:   bool
+    markdown:     str
+    toc_items:    list[TocItem]
+    chunks:       list[str]
+    chunk_images: list[list[int]]   # chunk_idx → figure indices in that chunk
+    images:       list[ImageRecord]
+    page_count:   int
+    char_count:   int
+    ocr_used:     bool
 
 
 # ──────────────────────────────────────────────────────────────
@@ -113,14 +124,22 @@ class PDFExtractor:
         # Validate and clean malformed Markdown tables before chunking
         md = _clean_tables(md)
 
+        # Inject [FIGURE_ID: N] markers at each extracted caption so that
+        # chunks carry figure ownership without any LLM involvement.
+        md = _inject_figure_ids(md, images)
+
         # Chunk by heading boundaries (primary) or character overlap (fallback)
         chunks = _chunk_by_headings(md, self._chunk_size, self._overlap_size)
+
+        # Build the chunk→figure index mapping by scanning for the injected tags.
+        chunk_images = _build_chunk_images(chunks)
 
         char_count = sum(len(c) for c in chunks)
         return ExtractionResult(
             markdown=md,
             toc_items=toc_items,
             chunks=chunks,
+            chunk_images=chunk_images,
             images=images,
             page_count=page_count,
             char_count=char_count,
@@ -277,48 +296,36 @@ def _find_nearby_caption(lines: list[str], start: int, end: int) -> str:
 
 
 # ──────────────────────────────────────────────────────────────
-# Image extraction
+# Image extraction — caption-first approach
 # ──────────────────────────────────────────────────────────────
 
 def _extract_images(doc) -> list[ImageRecord]:
+    """
+    Caption-first extraction: scan each page for Figure/Table captions,
+    infer the figure region (via vector drawing union or whitespace gap),
+    then render that region as a PNG pixmap.  Works for vector graphics,
+    raster images, and mixed figures without relying on xref matching.
+    """
     records: list[ImageRecord] = []
-    seen_xrefs: set[int] = set()
     idx = 0
 
     for page_num, page in enumerate(doc):
         blocks = page.get_text("dict")["blocks"]
+        body_size = _page_body_size(blocks)
+        captions = _scan_figure_captions(blocks, page_num)
 
-        for img_info in page.get_images(full=True):
-            xref = img_info[0]
-            if xref in seen_xrefs:
+        for cap in captions:
+            figure_rect = _infer_figure_rect(page, blocks, cap, body_size)
+            if figure_rect is None or figure_rect.is_empty:
                 continue
-            seen_xrefs.add(xref)
-
-            try:
-                img_data = doc.extract_image(xref)
-            except Exception:
+            raw = _render_figure(page, figure_rect)
+            if raw is None:
                 continue
-            if img_data is None:
-                continue
-
-            raw    = img_data.get("image", b"")
-            width  = img_data.get("width",  0)
-            height = img_data.get("height", 0)
-
-            if len(raw) > _MAX_IMAGE_BYTES:
-                continue
-            if width < _MIN_IMAGE_DIM or height < _MIN_IMAGE_DIM:
-                continue
-
-            caption = _find_image_caption(page, img_info, blocks)
-            ext     = img_data.get("ext", "png")
-            b64     = base64.b64encode(raw).decode("ascii")
-            data_uri = f"data:image/{ext};base64,{b64}"
-
+            b64 = base64.b64encode(raw).decode("ascii")
             records.append(ImageRecord(
                 index=idx,
-                caption=caption,
-                data_uri=data_uri,
+                caption=cap["text"],
+                data_uri=f"data:image/png;base64,{b64}",
                 page=page_num + 1,
             ))
             idx += 1
@@ -326,43 +333,287 @@ def _extract_images(doc) -> list[ImageRecord]:
     return records
 
 
-def _find_image_caption(page, img_info, blocks: list) -> str:
+# ── helpers ───────────────────────────────────────────────────
+
+def _block_text(block: dict) -> str:
+    return " ".join(
+        span["text"].strip()
+        for line in block.get("lines", [])
+        for span in line.get("spans", [])
+    ).strip()
+
+
+def _page_body_size(blocks: list) -> float:
+    """Median font size across all text spans — proxy for body-text size."""
+    sizes = [
+        span.get("size", 0.0)
+        for block in blocks
+        if block["type"] == 0
+        for line in block.get("lines", [])
+        for span in line.get("spans", [])
+        if span.get("size", 0.0) > 0
+    ]
+    if not sizes:
+        return 10.0
+    sizes.sort()
+    return sizes[len(sizes) // 2]
+
+
+def _scan_figure_captions(blocks: list, page_num: int) -> list[dict]:
     """
-    Locate the bounding box of the image on the page, then search for a
-    caption in the nearest text block below it whose text starts with a
-    figure/table marker.
+    Return one dict per figure/table caption found on the page.
+    Adjacent continuation blocks (within _CAPTION_MERGE_GAP) are merged into
+    a single caption record, with end-of-block hyphens stripped.
+    Each dict: text, full_bbox (pymupdf.Rect), direction ("above"|"below"), page_num.
     """
-    # Find the image's bounding box via page image-info list
-    try:
-        for info in page.get_image_info():
-            if info.get("xref") == img_info[0]:
-                img_rect = pymupdf.Rect(info["bbox"])
+    captions: list[dict] = []
+    consumed: set[int] = set()
+
+    for i, block in enumerate(blocks):
+        if block["type"] != 0 or i in consumed:
+            continue
+        text = _block_text(block)
+        m = _CAPTION_RE.match(text)
+        if not m:
+            continue
+
+        prefix = m.group(1).lower().rstrip(".")
+        direction = "below" if prefix == "table" else "above"
+        full_bbox = pymupdf.Rect(block["bbox"])
+        merged_text = text
+        consumed.add(i)
+
+        # Absorb immediately adjacent continuation blocks
+        for j in range(i + 1, len(blocks)):
+            nb = blocks[j]
+            if nb["type"] != 0:
                 break
-        else:
-            return ""
-    except Exception:
-        return ""
+            nb_rect = pymupdf.Rect(nb["bbox"])
+            if nb_rect.y0 - full_bbox.y1 > _CAPTION_MERGE_GAP:
+                break
+            nb_text = _block_text(nb)
+            if _CAPTION_RE.match(nb_text):
+                break
+            # Strip trailing hyphen (word split across blocks)
+            if merged_text.endswith("-"):
+                merged_text = merged_text[:-1] + nb_text
+            else:
+                merged_text = merged_text + " " + nb_text
+            full_bbox = full_bbox | nb_rect
+            consumed.add(j)
 
-    best_text  = ""
-    best_dist  = float("inf")
+        captions.append({
+            "text": merged_text.strip(),
+            "full_bbox": full_bbox,
+            "direction": direction,
+            "page_num": page_num,
+        })
 
-    for block in blocks:
-        if block["type"] != 0:
-            continue
-        block_rect = pymupdf.Rect(block["bbox"])
-        # Caption should be below the image
-        if block_rect.y0 < img_rect.y1 - 5:
-            continue
-        dist = block_rect.y0 - img_rect.y1
-        if dist > 80:   # more than ~1 inch below — probably unrelated
-            continue
-        text = " ".join(
-            span["text"].strip()
-            for line in block.get("lines", [])
-            for span in line.get("spans", [])
-        ).strip()
-        if _CAPTION_RE.match(text) and dist < best_dist:
-            best_dist  = dist
-            best_text  = text
+    return captions
 
-    return best_text[:120]
+
+def _infer_figure_rect(
+    page, blocks: list, caption: dict, body_size: float
+) -> pymupdf.Rect | None:
+    """
+    Primary: union bounding boxes of vector drawings that are in the search
+    window and pass the overlap + hairline filters.
+    Fallback: whitespace-gap walk when no qualifying drawings are found.
+    """
+    full_bbox: pymupdf.Rect = caption["full_bbox"]
+    direction: str = caption["direction"]
+    page_rect = page.rect
+
+    if direction == "above":
+        search_top = max(page_rect.y0, full_bbox.y0 - _FIGURE_SEARCH_WINDOW)
+        candidates = [
+            d["rect"] for d in page.get_drawings()
+            if d["rect"].y1 <= full_bbox.y0 + 2
+            and d["rect"].y0 >= search_top
+            and _x_overlaps(d["rect"], full_bbox)
+            and not _is_hairline(d)
+        ]
+    else:  # "below" for tables
+        search_bottom = min(page_rect.y1, full_bbox.y1 + _FIGURE_SEARCH_WINDOW)
+        candidates = [
+            d["rect"] for d in page.get_drawings()
+            if d["rect"].y0 >= full_bbox.y1 - 2
+            and d["rect"].y1 <= search_bottom
+            and _x_overlaps(d["rect"], full_bbox)
+            and not _is_hairline(d)
+        ]
+
+    if candidates:
+        union: pymupdf.Rect = candidates[0]
+        for r in candidates[1:]:
+            union = union | r
+        padded = pymupdf.Rect(
+            union.x0 - _CAPTION_PADDING,
+            union.y0 - _CAPTION_PADDING,
+            union.x1 + _CAPTION_PADDING,
+            union.y1 + _CAPTION_PADDING,
+        )
+        result = padded & page_rect
+        if not result.is_empty and result.height >= _MIN_FIGURE_HEIGHT:
+            return result
+
+    return _whitespace_fallback(page, blocks, caption, body_size)
+
+
+def _x_overlaps(drawing_rect: pymupdf.Rect, caption_bbox: pymupdf.Rect) -> bool:
+    """True when drawing_rect x-range overlaps caption_bbox by >= _DRAWING_OVERLAP_FRAC."""
+    cap_width = max(caption_bbox.x1 - caption_bbox.x0, 1.0)
+    overlap = min(drawing_rect.x1, caption_bbox.x1) - max(drawing_rect.x0, caption_bbox.x0)
+    return (overlap / cap_width) >= _DRAWING_OVERLAP_FRAC
+
+
+def _is_hairline(drawing: dict) -> bool:
+    """Stroke-only paths with negligible height are decorative rules, not figure content."""
+    return not drawing.get("fill") and drawing["rect"].height < _HAIRLINE_MAX_HEIGHT
+
+
+def _whitespace_fallback(
+    page, blocks: list, caption: dict, body_size: float
+) -> pymupdf.Rect | None:
+    """
+    Find the figure region by locating the nearest body-text block on the
+    other side of the whitespace gap that separates figure from prose.
+    x-range is expanded to encompass all blocks (including embedded images)
+    found within the vertical window.
+    """
+    full_bbox: pymupdf.Rect = caption["full_bbox"]
+    direction: str = caption["direction"]
+    page_rect = page.rect
+
+    if direction == "above":
+        ref_y = full_bbox.y0
+        search_limit = max(page_rect.y0, ref_y - _FIGURE_SEARCH_WINDOW)
+        best_edge = search_limit  # default: top of search window
+
+        for block in blocks:
+            if block["type"] != 0:
+                continue
+            br = pymupdf.Rect(block["bbox"])
+            if br.y1 > ref_y - 2:
+                continue
+            if _CAPTION_RE.match(_block_text(block)):
+                continue
+            sz = max(
+                (span.get("size", 0.0)
+                 for line in block.get("lines", [])
+                 for span in line.get("spans", [])),
+                default=0.0,
+            )
+            if sz < body_size * 0.8:
+                continue
+            if br.y1 > best_edge:
+                best_edge = br.y1
+
+        x0 = full_bbox.x0 - _CAPTION_PADDING
+        x1 = full_bbox.x1 + _CAPTION_PADDING
+        for block in blocks:
+            br = pymupdf.Rect(block["bbox"])
+            if best_edge <= br.y0 and br.y1 <= ref_y:
+                x0 = min(x0, br.x0 - _CAPTION_PADDING)
+                x1 = max(x1, br.x1 + _CAPTION_PADDING)
+
+        figure_rect = pymupdf.Rect(x0, best_edge, x1, ref_y)
+
+    else:  # "below" for tables
+        ref_y = full_bbox.y1
+        search_limit = min(page_rect.y1, ref_y + _FIGURE_SEARCH_WINDOW)
+        best_edge = search_limit  # default: bottom of search window
+
+        for block in blocks:
+            if block["type"] != 0:
+                continue
+            br = pymupdf.Rect(block["bbox"])
+            if br.y0 < ref_y + 2:
+                continue
+            if _CAPTION_RE.match(_block_text(block)):
+                continue
+            sz = max(
+                (span.get("size", 0.0)
+                 for line in block.get("lines", [])
+                 for span in line.get("spans", [])),
+                default=0.0,
+            )
+            if sz < body_size * 0.8:
+                continue
+            if br.y0 < best_edge:
+                best_edge = br.y0
+
+        x0 = full_bbox.x0 - _CAPTION_PADDING
+        x1 = full_bbox.x1 + _CAPTION_PADDING
+        for block in blocks:
+            br = pymupdf.Rect(block["bbox"])
+            if ref_y <= br.y0 and br.y1 <= best_edge:
+                x0 = min(x0, br.x0 - _CAPTION_PADDING)
+                x1 = max(x1, br.x1 + _CAPTION_PADDING)
+
+        figure_rect = pymupdf.Rect(x0, ref_y, x1, best_edge)
+
+    if figure_rect.is_empty or figure_rect.height < _MIN_FIGURE_HEIGHT:
+        return None
+    return figure_rect & page_rect
+
+
+def _render_figure(page, figure_rect: pymupdf.Rect) -> bytes | None:
+    """Render a page region as a PNG at _RENDER_DPI, halving DPI once if over budget."""
+    for dpi in (_RENDER_DPI, _RENDER_DPI_FALLBACK):
+        try:
+            mat = pymupdf.Matrix(dpi / 72, dpi / 72)
+            pix = page.get_pixmap(clip=figure_rect, matrix=mat, alpha=False)
+            raw = pix.tobytes("png")
+            if len(raw) <= _MAX_IMAGE_BYTES:
+                return raw
+        except Exception:
+            return None
+    return None
+
+
+# ──────────────────────────────────────────────────────────────
+# Figure-ID injection and chunk-image mapping
+# ──────────────────────────────────────────────────────────────
+
+def _inject_figure_ids(md: str, images: list[ImageRecord]) -> str:
+    """
+    Append [FIGURE_ID: N] to the first line in the markdown that matches
+    each extracted image's leading 'Figure N' / 'Table N' prefix.
+    Anchoring to ^ (MULTILINE) avoids tagging mid-sentence references.
+    Handles optional bold (**) wrapping added by pymupdf4llm, and normalizes
+    whitespace so captions like 'Figure  3' (double-space from raw PDF blocks)
+    still match 'Figure 3' in the markdown.
+    """
+    for img in images:
+        m = re.match(
+            r"((?:fig\.?\s*|figure\s*|chart\s*|table\s*)\d+)",
+            img.caption,
+            re.IGNORECASE,
+        )
+        if not m:
+            continue
+        # Split on whitespace so "Figure  3" → ["Figure", "3"], then join with
+        # \s+ so the pattern matches any run of spaces between keyword and number.
+        # Group 1 captures optional leading ** (bold markdown); group 2 captures
+        # the rest of the line so the substitution can append FIGURE_ID after it.
+        parts = [re.escape(p) for p in re.split(r'\s+', m.group(1).strip()) if p]
+        prefix_pattern = r'\s+'.join(parts)
+        pattern = re.compile(
+            r"^(\*{0,2})(" + prefix_pattern + r"\b[^\n]*)",
+            re.IGNORECASE | re.MULTILINE,
+        )
+        md = pattern.sub(
+            lambda match, n=img.index: match.group(1) + match.group(2) + f" [FIGURE_ID: {n}]",
+            md,
+            count=1,
+        )
+    return md
+
+
+def _build_chunk_images(chunks: list[str]) -> list[list[int]]:
+    """Return a list parallel to chunks; each entry is the figure IDs found in that chunk."""
+    return [
+        [int(m.group(1)) for m in _FIGURE_ID_RE.finditer(chunk)]
+        for chunk in chunks
+    ]

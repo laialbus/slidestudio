@@ -18,7 +18,11 @@ import zlib
 import pymupdf
 import pytest
 
-from extractors.pdf import ExtractionResult, PDFExtractor, TocItem
+from extractors.pdf import (
+    ExtractionResult, PDFExtractor, TocItem,
+    _inject_figure_ids, _build_chunk_images,
+)
+from extractors.pdf import ImageRecord
 
 
 # ──────────────────────────────────────────────────────────────
@@ -131,6 +135,51 @@ def _table_pdf(tmp_path) -> str:
     return path
 
 
+def _vector_figure_pdf(tmp_path) -> str:
+    """
+    Single-page PDF with a vector diagram (no embedded raster) and a Figure caption.
+    The figure is drawn with path commands — page.get_images() returns nothing.
+    """
+    doc  = pymupdf.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((72, 60), "Body text above the diagram.", fontsize=10)
+    shape = page.new_shape()
+    shape.draw_rect(pymupdf.Rect(72, 90, 300, 220))
+    shape.draw_line(pymupdf.Point(100, 155), pymupdf.Point(270, 155))
+    shape.finish(color=(0, 0, 0), fill=None, width=1)
+    shape.commit()
+    page.insert_text((72, 240), "Figure 2: A vector architecture diagram.", fontsize=10)
+    page.insert_text((72, 300), "Body text below the diagram.", fontsize=10)
+    path = str(tmp_path / "vector_figure.pdf")
+    doc.save(path)
+    doc.close()
+    return path
+
+
+def _table_above_caption_pdf(tmp_path) -> str:
+    """
+    Single-page PDF where a Table caption sits ABOVE the drawn grid.
+    The extractor must search downward from the caption to find the figure region.
+    """
+    doc  = pymupdf.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((72, 72), "Table 1: Experiment results.", fontsize=10)
+    shape = page.new_shape()
+    for r in range(4):
+        y = 100 + r * 20
+        shape.draw_line(pymupdf.Point(72, y), pymupdf.Point(300, y))
+    for c in range(4):
+        x = 72 + c * 76
+        shape.draw_line(pymupdf.Point(x, 100), pymupdf.Point(x, 160))
+    shape.finish(color=(0, 0, 0), fill=None, width=0.5)
+    shape.commit()
+    page.insert_text((72, 200), "Body text after the table.", fontsize=10)
+    path = str(tmp_path / "table_above.pdf")
+    doc.save(path)
+    doc.close()
+    return path
+
+
 def _toc_pdf(tmp_path) -> str:
     """PDF with three embedded TOC entries at different levels."""
     doc   = pymupdf.open()
@@ -169,6 +218,14 @@ class TestExtractionResult:
     def test_has_images_list(self, tmp_path):
         result = PDFExtractor().extract(_no_heading_pdf(tmp_path))
         assert isinstance(result.images, list)
+
+    def test_has_chunk_images_list(self, tmp_path):
+        result = PDFExtractor().extract(_no_heading_pdf(tmp_path))
+        assert isinstance(result.chunk_images, list)
+
+    def test_chunk_images_length_matches_chunks(self, tmp_path):
+        result = PDFExtractor().extract(_no_heading_pdf(tmp_path))
+        assert len(result.chunk_images) == len(result.chunks)
 
     def test_page_count_correct(self, tmp_path):
         result = PDFExtractor().extract(_no_heading_pdf(tmp_path))
@@ -356,3 +413,169 @@ class TestScannedPdfWarning:
         assert any("Tesseract" in t or "tesseract" in t.lower() for t in texts), (
             f"Expected Tesseract warning, got: {texts}"
         )
+
+
+# ──────────────────────────────────────────────────────────────
+# Scenario 7 — Caption-first figure extraction
+# ──────────────────────────────────────────────────────────────
+
+class TestCaptionFirstImageExtraction:
+    def test_raster_figure_extracted(self, tmp_path):
+        """Existing raster-image figure still extracted with new caption-first path."""
+        result = PDFExtractor().extract(_image_pdf(tmp_path))
+        assert len(result.images) >= 1
+
+    def test_raster_figure_caption_populated(self, tmp_path):
+        result = PDFExtractor().extract(_image_pdf(tmp_path))
+        assert len(result.images) >= 1
+        assert "Figure 1" in result.images[0].caption
+
+    def test_vector_figure_extracted(self, tmp_path):
+        """Vector drawing with a Figure caption is extracted without embedded raster."""
+        result = PDFExtractor().extract(_vector_figure_pdf(tmp_path))
+        assert len(result.images) == 1
+
+    def test_vector_figure_caption_populated(self, tmp_path):
+        result = PDFExtractor().extract(_vector_figure_pdf(tmp_path))
+        assert len(result.images) == 1
+        assert "Figure 2" in result.images[0].caption
+
+    def test_vector_figure_data_uri(self, tmp_path):
+        result = PDFExtractor().extract(_vector_figure_pdf(tmp_path))
+        assert result.images[0].data_uri.startswith("data:image/png;base64,")
+
+    def test_table_caption_above_extracted(self, tmp_path):
+        """Table caption above the grid causes downward search — region still captured."""
+        result = PDFExtractor().extract(_table_above_caption_pdf(tmp_path))
+        assert len(result.images) == 1
+        assert "Table 1" in result.images[0].caption
+
+    def test_drawing_without_caption_not_extracted(self, tmp_path):
+        """Vector drawings with no Figure/Table caption produce no images."""
+        result = PDFExtractor().extract(_table_pdf(tmp_path))
+        assert result.images == []
+
+    def test_multiline_caption_merged(self, tmp_path):
+        """Two adjacent caption blocks are merged into a single ImageRecord."""
+        doc  = pymupdf.open()
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 60), "Body text above.", fontsize=10)
+        shape = page.new_shape()
+        shape.draw_rect(pymupdf.Rect(72, 90, 300, 200))
+        shape.finish(color=(0, 0, 0), fill=None, width=1)
+        shape.commit()
+        # Caption split across two blocks — simulated by two insert_text calls
+        page.insert_text((72, 220), "Figure 3: First line of a long caption.", fontsize=9)
+        page.insert_text((72, 232), "Second line continues here.", fontsize=9)
+        page.insert_text((72, 280), "Body text below.", fontsize=10)
+        path = str(tmp_path / "multiline_cap.pdf")
+        doc.save(path)
+        doc.close()
+        result = PDFExtractor().extract(path)
+        assert len(result.images) == 1
+        assert "Figure 3" in result.images[0].caption
+
+
+# ──────────────────────────────────────────────────────────────
+# Scenario 8 — chunk_images: figure-ID injection and chunk mapping
+# ──────────────────────────────────────────────────────────────
+
+class TestChunkImages:
+    def test_no_figures_yields_empty_lists(self, tmp_path):
+        result = PDFExtractor().extract(_no_heading_pdf(tmp_path))
+        assert all(ids == [] for ids in result.chunk_images)
+
+    def test_chunk_images_length_equals_chunks_length(self, tmp_path):
+        result = PDFExtractor().extract(_vector_figure_pdf(tmp_path))
+        assert len(result.chunk_images) == len(result.chunks)
+
+    def test_extracted_figure_index_appears_in_some_chunk(self, tmp_path):
+        result = PDFExtractor().extract(_vector_figure_pdf(tmp_path))
+        assert len(result.images) == 1
+        fig_index = result.images[0].index
+        all_ids = [fid for ids in result.chunk_images for fid in ids]
+        assert fig_index in all_ids
+
+    def test_figure_id_marker_injected_into_chunk_text(self, tmp_path):
+        result = PDFExtractor().extract(_vector_figure_pdf(tmp_path))
+        joined = " ".join(result.chunks)
+        assert "[FIGURE_ID:" in joined
+
+    def test_figure_index_in_chunk_images_matches_images_index(self, tmp_path):
+        result = PDFExtractor().extract(_image_pdf(tmp_path))
+        all_ids = {fid for ids in result.chunk_images for fid in ids}
+        image_indices = {img.index for img in result.images}
+        assert all_ids <= image_indices
+
+
+class TestInjectFigureIds:
+    def _record(self, index: int, caption: str) -> ImageRecord:
+        return ImageRecord(index=index, caption=caption, data_uri="data:image/png;base64,AA==", page=1)
+
+    def test_marker_appended_to_caption_line(self):
+        md = "Some text.\nFigure 1: An architecture diagram.\nMore text."
+        images = [self._record(0, "Figure 1: An architecture diagram.")]
+        result = _inject_figure_ids(md, images)
+        assert "[FIGURE_ID: 0]" in result
+
+    def test_marker_appended_only_to_first_occurrence(self):
+        md = "Figure 1: Caption.\nSome text about Figure 1 again.\nFigure 1: Caption."
+        images = [self._record(0, "Figure 1: Caption.")]
+        result = _inject_figure_ids(md, images)
+        assert result.count("[FIGURE_ID: 0]") == 1
+
+    def test_multiple_figures_each_get_own_marker(self):
+        md = "Figure 1: First diagram.\nText.\nFigure 2: Second diagram."
+        images = [
+            self._record(0, "Figure 1: First diagram."),
+            self._record(1, "Figure 2: Second diagram."),
+        ]
+        result = _inject_figure_ids(md, images)
+        assert "[FIGURE_ID: 0]" in result
+        assert "[FIGURE_ID: 1]" in result
+
+    def test_no_match_leaves_markdown_unchanged(self):
+        md = "Some body text with no captions here."
+        images = [self._record(0, "Figure 99: Missing.")]
+        result = _inject_figure_ids(md, images)
+        assert result == md
+
+    def test_mid_sentence_reference_not_tagged(self):
+        md = "As shown in Figure 1, the result is clear.\nFigure 1: Actual caption."
+        images = [self._record(0, "Figure 1: Actual caption.")]
+        result = _inject_figure_ids(md, images)
+        # Only the line-start caption should be tagged, not the mid-sentence reference
+        assert result.count("[FIGURE_ID: 0]") == 1
+        assert "Actual caption. [FIGURE_ID: 0]" in result
+
+    def test_bold_wrapped_caption_tagged(self):
+        # pymupdf4llm renders standalone captions as **bold** lines
+        md = "Text before.\n**Figure 6: A cooperative framework.**\nText after."
+        images = [self._record(8, "Figure 6: A cooperative framework.")]
+        result = _inject_figure_ids(md, images)
+        assert "[FIGURE_ID: 8]" in result
+
+    def test_double_space_caption_matches_single_space_in_markdown(self):
+        # Raw PDF text blocks sometimes produce double spaces; markdown normalizes them
+        md = "Text.\nFigure 3: Double space caption.\nMore."
+        images = [self._record(2, "Figure  3: Double space caption.")]
+        result = _inject_figure_ids(md, images)
+        assert "[FIGURE_ID: 2]" in result
+
+
+class TestBuildChunkImages:
+    def test_empty_chunks_returns_empty_list(self):
+        assert _build_chunk_images([]) == []
+
+    def test_chunk_with_no_marker_returns_empty(self):
+        assert _build_chunk_images(["No markers here."]) == [[]]
+
+    def test_chunk_with_one_marker_returns_index(self):
+        assert _build_chunk_images(["Text [FIGURE_ID: 3] more."]) == [[3]]
+
+    def test_chunk_with_multiple_markers(self):
+        assert _build_chunk_images(["[FIGURE_ID: 0] and [FIGURE_ID: 2]"]) == [[0, 2]]
+
+    def test_multiple_chunks_mapped_independently(self):
+        chunks = ["[FIGURE_ID: 0] text", "no markers", "[FIGURE_ID: 1] text"]
+        assert _build_chunk_images(chunks) == [[0], [], [1]]

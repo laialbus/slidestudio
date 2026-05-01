@@ -106,6 +106,7 @@ _FAKE_EXTRACTION = ExtractionResult(
     markdown="",
     toc_items=[TocItem(level=1, heading="Introduction", page=1)],
     chunks=["chunk text"],
+    chunk_images=[[]],
     images=[],
     page_count=1,
     char_count=len("chunk text"),
@@ -515,7 +516,7 @@ class TestMultiDeckResume:
         class TrackingPlanner:
             provider = _DummyProvider()
 
-            async def run(self, doc_map, skeleton, scope=None):
+            async def run(self, doc_map, skeleton, chunk_images=None, scope=None):
                 if scope:
                     planner_call_log.append(scope.heading)
                 return _slide_plan()

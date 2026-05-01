@@ -18,7 +18,7 @@ Return a JSON object with:
   - source_section: the section heading this slide draws from
   - intention: what this slide is meant to teach (max 200 chars)
   - emphasis: what the viewer should walk away remembering (max 200 chars)
-  - chunk_indices: list of 1–3 chunk IDs whose raw text is needed to write this slide accurately
+  - chunk_indices: list of 1, 2, or 3 integer chunk IDs (NEVER empty, NEVER 4 or more) whose raw text is needed to write this slide accurately
 
 Slide design rules for a college student audience:
 - For every 3 "Key Concept" or "Definition" slides, schedule at least 1
@@ -33,8 +33,8 @@ Slide design rules for a college student audience:
 - "Insight" and "Takeaway" slides must express a non-obvious conclusion —
   something a student would not have predicted before reading the material.
   If the slide would merely restate a Key Concept, use that tag instead.
-- The final slide must be tagged "Summary" or "Takeaway". Set its chunk_indices
-  to an empty list []. It will be generated separately from the completed deck,
-  not from source chunks.
+- The final slide must be tagged "Summary" or "Takeaway". Assign it 1–3
+  representative chunk IDs like any other slide — do NOT set chunk_indices to [].
+  The pipeline detects it by its tag, not by its chunk_indices.
 
 Return ONLY the JSON object. No markdown fences, no explanation.

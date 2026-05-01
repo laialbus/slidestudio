@@ -324,3 +324,59 @@ class TestWriterBatchSizeRequired:
         agent1 = WriterAgent(stub1, writer_batch_size=8)
         _run(agent1.run(plan, _doc_map(), ["chunk"]))
         assert stub1._indices.get(SlidesDraft, 0) == 1
+
+
+# ──────────────────────────────────────────────────────────────
+# image_ref post-processing — PlannedSlide value always wins
+# ──────────────────────────────────────────────────────────────
+
+def _planned_slide_with_ref(index: int, image_ref: int | None) -> PlannedSlide:
+    return PlannedSlide(
+        index=index,
+        tag="Key Concept",
+        source_section="Intro",
+        intention="Explain.",
+        emphasis="Note.",
+        chunk_indices=[0],
+        image_ref=image_ref,
+    )
+
+
+class TestImageRefPostProcessing:
+    def test_planned_image_ref_propagates_to_draft(self):
+        slides = [
+            _planned_slide_with_ref(1, 3),
+            _planned_slide_with_ref(2, None),
+            _planned_slide_with_ref(3, None),
+            _planned_slide_with_ref(4, None),
+        ]
+        plan = _slide_plan(slides)
+        # LLM returns null for all image_refs (as instructed)
+        stub  = StubProvider({SlidesDraft: [_draft([_draft_slide(i + 1) for i in range(4)])]})
+        agent = WriterAgent(stub, writer_batch_size=4)
+        result = _run(agent.run(plan, _doc_map(), ["chunk"]))
+        assert result.slides[0].image_ref == 3
+
+    def test_none_planned_ref_yields_null_in_draft(self):
+        slides = [_planned_slide_with_ref(i + 1, None) for i in range(4)]
+        plan   = _slide_plan(slides)
+        stub   = StubProvider({SlidesDraft: [_draft([_draft_slide(i + 1) for i in range(4)])]})
+        agent  = WriterAgent(stub, writer_batch_size=4)
+        result = _run(agent.run(plan, _doc_map(), ["chunk"]))
+        for slide in result.slides:
+            assert slide.image_ref is None
+
+    def test_planned_ref_overrides_llm_hallucinated_ref(self):
+        # LLM outputs image_ref=99 for slide 1 but the planned value is None
+        slides = [_planned_slide_with_ref(i + 1, None) for i in range(4)]
+        plan   = _slide_plan(slides)
+        # Inject a hallucinated image_ref into the LLM response
+        hallucinated = DraftSlide(index=1, heading="S", body="B.", tag="Key Concept", image_ref=99)
+        draft_with_hallucination = SlidesDraft(
+            title="Test Deck",
+            slides=[hallucinated] + [_draft_slide(i + 2) for i in range(3)],
+        )
+        stub  = StubProvider({SlidesDraft: [draft_with_hallucination]})
+        agent = WriterAgent(stub, writer_batch_size=4)
+        result = _run(agent.run(plan, _doc_map(), ["chunk"]))
+        assert result.slides[0].image_ref is None

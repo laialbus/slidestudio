@@ -100,6 +100,7 @@ async def run_single_deck(
     max_review_cycles: int,
     debug: bool,
     output_dir: Path | str,
+    chunk_images: list[list[int]] = [],
     scope: SectionEntry | None = None,
     checkpoint: Checkpoint | None = None,
     _write: bool = True,
@@ -129,14 +130,14 @@ async def run_single_deck(
     slide_plan = ck.load("slide_plan", SlidePlan) if ck else None
     if slide_plan is None:
         slide_plan = await agents["planner"].run(
-            doc_map=doc_map, skeleton=skeleton, scope=scope
+            doc_map=doc_map, skeleton=skeleton, chunk_images=chunk_images, scope=scope
         )
         if ck:
             ck.save("slide_plan", slide_plan)
     _notify(on_progress, "planner", 1, 1)
 
     draft = await agents["writer"].run(
-        slide_plan=slide_plan, doc_map=doc_map, chunks=chunks, images=images
+        slide_plan=slide_plan, doc_map=doc_map, chunks=chunks
     )
     _notify(on_progress, "writer", 1, 1)
 
@@ -246,6 +247,7 @@ async def run_multi_deck(
     max_review_cycles: int,
     debug: bool,
     output_dir: Path | str,
+    chunk_images: list[list[int]] = [],
     checkpoint: Checkpoint | None = None,
     on_progress: ProgressCallback = None,
 ) -> tuple[DeckIndex, list[str], Path]:
@@ -264,6 +266,7 @@ async def run_multi_deck(
             max_review_cycles=max_review_cycles,
             debug=debug,
             output_dir=output_dir,
+            chunk_images=chunk_images,
             scope=chapter,
             checkpoint=checkpoint.scoped(chapter.heading) if checkpoint else None,
             _write=False,
@@ -313,6 +316,7 @@ async def route(
     max_review_cycles: int,
     debug: bool,
     output_dir: Path | str,
+    chunk_images: list[list[int]] = [],
     checkpoint: Checkpoint | None = None,
     on_progress: ProgressCallback = None,
 ):
@@ -329,12 +333,14 @@ async def route(
         return await run_multi_deck(
             title, doc_map, skeleton, chunks, images, agents,
             max_review_cycles, debug, output_dir,
+            chunk_images=chunk_images,
             checkpoint=checkpoint,
             on_progress=on_progress,
         )
     return await run_single_deck(
         title, doc_map, skeleton, chunks, images, agents,
         max_review_cycles, debug, output_dir,
+        chunk_images=chunk_images,
         checkpoint=checkpoint,
         on_progress=on_progress,
     )
@@ -401,6 +407,7 @@ async def run(
     doc_map  = analyst_result.doc_map
 
     chunks = extraction.chunks
+    chunk_images = extraction.chunk_images
     total_chars = extraction.char_count
 
     if debug:
@@ -431,6 +438,7 @@ async def run(
         max_review_cycles=max_review_cycles,
         debug=debug,
         output_dir=output_dir,
+        chunk_images=chunk_images,
         checkpoint=ck,
         on_progress=on_progress,
     )

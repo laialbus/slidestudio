@@ -17,6 +17,7 @@ class PlannedSlide(BaseModel):
     intention:      str       = Field(max_length=PLANNED_SLIDE_ANNOTATION_MAX)
     emphasis:       str       = Field(max_length=PLANNED_SLIDE_ANNOTATION_MAX)
     chunk_indices:  list[int] = Field(min_length=1, max_length=3)
+    image_ref:      int | None = None  # set by pipeline post-processing, not the LLM
 
 
 class SlidePlan(BaseModel):

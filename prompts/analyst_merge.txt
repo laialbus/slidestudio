@@ -9,5 +9,6 @@ $input_data
 Synthesise all inputs into one coherent, non-redundant $output_type JSON object. Preserve the most important concepts and insights. Remove duplication. Do not invent information that is not present in the inputs.
 
 Required output schema: $schema_description
+(The global structure above uses "level" and "position" on sections — those are context only. Follow the schema above exactly.)
 
-Return a single JSON object. Do not wrap the result in an array. No markdown fences, no explanation.
+Return a single flat JSON object whose top-level keys are exactly those listed in the required schema above. Do NOT wrap it under any outer key such as a chapter name (e.g. do NOT produce {"Chapter Name": {...}}). No markdown fences, no explanation.

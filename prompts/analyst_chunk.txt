@@ -12,10 +12,14 @@ Extract key information from this chunk and return a DocumentMap JSON object wit
 - technical_level: one of "beginner", "intermediate", "advanced"
 - core_thesis: central argument of the document
 - key_concepts: list of key concepts introduced or discussed in this chunk (at least 1)
-- sections: list of sections covered, each with:
+- sections: list of sections covered by this chunk, each with:
     - heading: the section heading this content belongs to
-    - importance: one of "high", "medium", "low"
-    - summary: what this chunk covers in 1-3 sentences
+    - importance: one of "high", "medium", "low"  ← required; NOT "level" or "position"
+    - summary: what this chunk covers in 1-3 sentences  ← required; NOT "level" or "position"
+  (The global structure above has "level" and "position" fields — those are input context only.
+   Your output sections must have "importance" and "summary" instead.)
+
+If the chunk contains [FIGURE_ID: N] markers, a figure at that index was successfully extracted and will be embedded alongside the corresponding slide. Note the figure's caption in the relevant section summary.
 
 If the chunk contains [FIGURE EXCLUDED: ...] or [TABLE EXCLUDED: ...] markers, reference them explicitly in the relevant section summary so downstream agents are aware of the omitted visual content.
 

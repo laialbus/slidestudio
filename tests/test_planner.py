@@ -9,7 +9,7 @@ import asyncio
 import pytest
 from pydantic import BaseModel
 
-from agents.planner import PlannerAgent
+from agents.planner import PlannerAgent, _assign_image_refs
 from providers.base import BaseProvider
 from providers.config import ProviderConfig
 from schemas.document_map import DocumentMap, Section
@@ -110,43 +110,43 @@ class TestPlannerNoScope:
 
     def test_returns_slide_plan_instance(self):
         agent, _ = self._make_agent()
-        result = _run(agent.run(_doc_map(), _skeleton()))
+        result = _run(agent.run(_doc_map(), _skeleton(), []))
         assert isinstance(result, SlidePlan)
 
     def test_title_matches_stub_response(self):
         expected = _slide_plan()
         agent, _ = self._make_agent(expected)
-        result = _run(agent.run(_doc_map(), _skeleton()))
+        result = _run(agent.run(_doc_map(), _skeleton(), []))
         assert result.title == expected.title
 
     def test_no_scope_instruction_in_prompt(self):
         agent, stub = self._make_agent()
-        _run(agent.run(_doc_map(), _skeleton()))
+        _run(agent.run(_doc_map(), _skeleton(), []))
         _, prompt = stub.received_prompts[0]
         # Empty scope_instruction → the placeholder is substituted with ""
         assert "Generate slides ONLY for" not in prompt
 
     def test_doc_map_title_in_prompt(self):
         agent, stub = self._make_agent()
-        _run(agent.run(_doc_map(), _skeleton()))
+        _run(agent.run(_doc_map(), _skeleton(), []))
         _, prompt = stub.received_prompts[0]
         assert "Attention Is All You Need" in prompt
 
     def test_skeleton_core_thesis_in_prompt(self):
         agent, stub = self._make_agent()
-        _run(agent.run(_doc_map(), _skeleton()))
+        _run(agent.run(_doc_map(), _skeleton(), []))
         _, prompt = stub.received_prompts[0]
         assert "Attention mechanisms alone are sufficient" in prompt
 
     def test_slide_count_matches_stub(self):
         plan = _slide_plan([_slide(i + 1) for i in range(6)])
         agent, _ = self._make_agent(plan)
-        result = _run(agent.run(_doc_map(), _skeleton()))
+        result = _run(agent.run(_doc_map(), _skeleton(), []))
         assert result.total_slides == 6
 
     def test_exactly_one_provider_call_made(self):
         agent, stub = self._make_agent()
-        _run(agent.run(_doc_map(), _skeleton()))
+        _run(agent.run(_doc_map(), _skeleton(), []))
         assert stub._indices.get(SlidePlan, 0) == 1
 
 
@@ -169,36 +169,116 @@ class TestPlannerWithScope:
 
     def test_returns_slide_plan(self):
         agent, _ = self._make_agent()
-        result = _run(agent.run(_doc_map(), _skeleton(), scope=self._scope_section()))
+        result = _run(agent.run(_doc_map(), _skeleton(), [], scope=self._scope_section()))
         assert isinstance(result, SlidePlan)
 
     def test_scope_heading_appears_in_prompt(self):
         agent, stub = self._make_agent()
-        _run(agent.run(_doc_map(), _skeleton(), scope=self._scope_section()))
+        _run(agent.run(_doc_map(), _skeleton(), [], scope=self._scope_section()))
         _, prompt = stub.received_prompts[0]
         assert "Model Architecture" in prompt
 
     def test_scope_instruction_text_in_prompt(self):
         agent, stub = self._make_agent()
-        _run(agent.run(_doc_map(), _skeleton(), scope=self._scope_section()))
+        _run(agent.run(_doc_map(), _skeleton(), [], scope=self._scope_section()))
         _, prompt = stub.received_prompts[0]
         assert "Generate slides ONLY for" in prompt
 
     def test_scope_chapter_name_quoted_in_prompt(self):
         agent, stub = self._make_agent()
-        _run(agent.run(_doc_map(), _skeleton(), scope=self._scope_section()))
+        _run(agent.run(_doc_map(), _skeleton(), [], scope=self._scope_section()))
         _, prompt = stub.received_prompts[0]
         assert '"Model Architecture"' in prompt
 
     def test_scoped_slides_reference_only_that_chapter(self):
         slides = [_slide(i + 1, "Model Architecture") for i in range(4)]
         agent, _ = self._make_agent(slides)
-        result = _run(agent.run(_doc_map(), _skeleton(), scope=self._scope_section()))
+        result = _run(agent.run(_doc_map(), _skeleton(), [], scope=self._scope_section()))
         for slide in result.slides:
             assert slide.source_section == "Model Architecture"
 
     def test_scope_none_same_as_no_scope(self):
         agent, stub = self._make_agent()
-        _run(agent.run(_doc_map(), _skeleton(), scope=None))
+        _run(agent.run(_doc_map(), _skeleton(), [], scope=None))
         _, prompt = stub.received_prompts[0]
         assert "Generate slides ONLY for" not in prompt
+
+
+# ──────────────────────────────────────────────────────────────
+# _assign_image_refs — deterministic post-processing
+# ──────────────────────────────────────────────────────────────
+
+class TestAssignImageRefs:
+    def _plan(self, slides: list[PlannedSlide]) -> SlidePlan:
+        return SlidePlan(title="Test", total_slides=len(slides), slides=slides)
+
+    def _slide(self, index: int, chunk_indices: list[int]) -> PlannedSlide:
+        return PlannedSlide(
+            index=index,
+            tag="Key Concept",
+            source_section="Intro",
+            intention="Explain.",
+            emphasis="Note.",
+            chunk_indices=chunk_indices,
+        )
+
+    def test_figure_assigned_when_chunk_owns_it(self):
+        plan = self._plan([self._slide(1, [0]), self._slide(2, [1]),
+                           self._slide(3, [1]), self._slide(4, [2])])
+        chunk_images = [[5], [], [], []]
+        result = _assign_image_refs(plan, chunk_images)
+        assert result.slides[0].image_ref == 5
+
+    def test_no_figure_when_chunk_has_none(self):
+        plan = self._plan([self._slide(i + 1, [i]) for i in range(4)])
+        chunk_images = [[], [], [], []]
+        result = _assign_image_refs(plan, chunk_images)
+        for slide in result.slides:
+            assert slide.image_ref is None
+
+    def test_deduplication_prevents_same_figure_on_two_slides(self):
+        # Both slides reference chunk 0 which owns figure 3
+        plan = self._plan([self._slide(1, [0]), self._slide(2, [0]),
+                           self._slide(3, [1]), self._slide(4, [1])])
+        chunk_images = [[3], [], [], []]
+        result = _assign_image_refs(plan, chunk_images)
+        assert result.slides[0].image_ref == 3
+        assert result.slides[1].image_ref is None
+
+    def test_first_slide_wins_deduplication(self):
+        # Slides 1 and 2 both select chunk 0 (figure 7); slide 1 appears first
+        plan = self._plan([self._slide(1, [0]), self._slide(2, [0]),
+                           self._slide(3, [1]), self._slide(4, [1])])
+        chunk_images = [[7], [], [], []]
+        result = _assign_image_refs(plan, chunk_images)
+        refs = [s.image_ref for s in result.slides]
+        assert refs.count(7) == 1
+        assert refs[0] == 7
+
+    def test_multiple_figures_in_chunk_uses_first(self):
+        plan = self._plan([self._slide(i + 1, [i]) for i in range(4)])
+        chunk_images = [[2, 3], [], [], []]
+        result = _assign_image_refs(plan, chunk_images)
+        assert result.slides[0].image_ref == 2
+
+    def test_out_of_range_chunk_index_ignored(self):
+        plan = self._plan([self._slide(1, [99]), self._slide(2, [0]),
+                           self._slide(3, [1]), self._slide(4, [2])])
+        chunk_images = [[5], [], []]
+        result = _assign_image_refs(plan, chunk_images)
+        assert result.slides[0].image_ref is None
+        assert result.slides[1].image_ref == 5
+
+    def test_empty_chunk_images_assigns_nothing(self):
+        plan = self._plan([self._slide(i + 1, [0]) for i in range(4)])
+        result = _assign_image_refs(plan, [])
+        for slide in result.slides:
+            assert slide.image_ref is None
+
+    def test_original_slide_plan_not_mutated(self):
+        plan = self._plan([self._slide(1, [0]), self._slide(2, [0]),
+                           self._slide(3, [1]), self._slide(4, [1])])
+        chunk_images = [[3], [], [], []]
+        _assign_image_refs(plan, chunk_images)
+        for slide in plan.slides:
+            assert slide.image_ref is None
