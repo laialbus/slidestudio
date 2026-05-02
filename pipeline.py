@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from agents.analyst import AnalystAgent, AnalystResult
+from agents.analyst import AnalystResult
 from extractors.pdf import ExtractionResult, PDFExtractor
 from schemas.deck_index import DeckEntry, DeckIndex
 from schemas.deck_output import DeckOutput, ImageEntry
@@ -404,7 +404,6 @@ def estimate(
 
 async def run(
     file_path: Path,
-    provider,
     agents: dict,
     output_dir: Path,
     chunk_size: int,
@@ -442,7 +441,7 @@ async def run(
     if skeleton_cp is not None and doc_map_cp is not None:
         analyst_result = AnalystResult(skeleton=skeleton_cp, doc_map=doc_map_cp)
     else:
-        analyst_result = await AnalystAgent(provider).run(analyst_input)
+        analyst_result = await agents["analyst"].run(analyst_input)
         if ck:
             ck.save("skeleton", analyst_result.skeleton)
             ck.save("doc_map", analyst_result.doc_map)

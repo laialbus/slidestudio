@@ -224,23 +224,6 @@ def _patch_extractor(extraction=None):
         _pipeline_module.PDFExtractor = original
 
 
-@contextmanager
-def _patch_analyst(analyst: StubAnalyst):
-    """Patch AnalystAgent in the pipeline module to use the given stub."""
-    class _Patched:
-        def __init__(self, provider):
-            self._delegate = analyst
-        async def run(self, extraction):
-            return await self._delegate.run(extraction)
-
-    original = _pipeline_module.AnalystAgent
-    _pipeline_module.AnalystAgent = _Patched
-    try:
-        yield
-    finally:
-        _pipeline_module.AnalystAgent = original
-
-
 # ──────────────────────────────────────────────────────────────
 # Fixture: temporary checkpoint and output directories
 # ──────────────────────────────────────────────────────────────
@@ -263,6 +246,7 @@ def _checkpoint(tmp_dirs, resume: bool) -> Checkpoint:
 
 def _default_agents(planner=None, analyst=None):
     return {
+        "analyst": analyst or StubAnalyst(AnalystResult(skeleton=_skeleton(), doc_map=_doc_map())),
         "planner": planner or StubPlanner(_slide_plan()),
         "writer":  StubWriter(_slides_draft()),
         "critic":  StubCritic(),
@@ -273,7 +257,6 @@ def _default_agents(planner=None, analyst=None):
 async def _run_pipeline_async(tmp_dirs, checkpoint, agents):
     return await pipeline_run(
         file_path=Path("dummy.pdf"),
-        provider=StubProvider(),
         agents=agents,
         output_dir=tmp_dirs["output"],
         chunk_size=8000,
@@ -286,8 +269,8 @@ async def _run_pipeline_async(tmp_dirs, checkpoint, agents):
     )
 
 
-def _full_run(tmp_dirs, checkpoint, agents, analyst):
-    with _patch_extractor(), _patch_analyst(analyst):
+def _full_run(tmp_dirs, checkpoint, agents):
+    with _patch_extractor():
         return _run(_run_pipeline_async(tmp_dirs, checkpoint, agents))
 
 
@@ -308,7 +291,7 @@ class TestAnalystCheckpoint:
         analyst    = StubAnalyst(AnalystResult(skeleton=sk, doc_map=dm))
         cp_resume  = _checkpoint(tmp_dirs, resume=True)
 
-        _full_run(tmp_dirs, cp_resume, _default_agents(), analyst)
+        _full_run(tmp_dirs, cp_resume, _default_agents(analyst=analyst))
 
         assert analyst.call_count == 0
 
@@ -318,7 +301,7 @@ class TestAnalystCheckpoint:
         analyst = StubAnalyst(AnalystResult(skeleton=sk, doc_map=dm))
 
         cp = _checkpoint(tmp_dirs, resume=True)
-        _full_run(tmp_dirs, cp, _default_agents(), analyst)
+        _full_run(tmp_dirs, cp, _default_agents(analyst=analyst))
 
         assert analyst.call_count == 1
 
@@ -328,7 +311,7 @@ class TestAnalystCheckpoint:
         analyst = StubAnalyst(AnalystResult(skeleton=sk, doc_map=dm))
 
         cp = _checkpoint(tmp_dirs, resume=False)
-        _full_run(tmp_dirs, cp, _default_agents(), analyst)
+        _full_run(tmp_dirs, cp, _default_agents(analyst=analyst))
 
         assert (tmp_dirs["cache"] / "testkey" / "skeleton.json").exists()
         assert (tmp_dirs["cache"] / "testkey" / "doc_map.json").exists()
@@ -340,7 +323,7 @@ class TestAnalystCheckpoint:
 
         cp = _checkpoint(tmp_dirs, resume=True)
         # Should not raise even though no cache exists
-        _full_run(tmp_dirs, cp, _default_agents(), analyst)
+        _full_run(tmp_dirs, cp, _default_agents(analyst=analyst))
 
         assert analyst.call_count == 1
 
@@ -397,21 +380,10 @@ class TestCheckpointAtomicity:
                 raise RuntimeError("Simulated failure before save")
 
         cp = _checkpoint(tmp_dirs, resume=False)
-
-        class _Patched:
-            def __init__(self, provider):
-                pass
-            async def run(self, extraction):
-                raise RuntimeError("Simulated failure before save")
-
-        original = _pipeline_module.AnalystAgent
-        _pipeline_module.AnalystAgent = _Patched
-        try:
-            with pytest.raises(RuntimeError):
-                with _patch_extractor():
-                    _run(_run_pipeline_async(tmp_dirs, cp, _default_agents()))
-        finally:
-            _pipeline_module.AnalystAgent = original
+        agents = _default_agents(analyst=_FailingAnalyst())
+        with pytest.raises(RuntimeError):
+            with _patch_extractor():
+                _run(_run_pipeline_async(tmp_dirs, cp, agents))
 
         assert not (tmp_dirs["cache"] / "testkey" / "skeleton.json").exists()
         assert not (tmp_dirs["cache"] / "testkey" / "doc_map.json").exists()
@@ -434,7 +406,7 @@ class TestForceFlag:
 
         # Run with resume=False (--force semantics: ignore cache)
         cp_force = _checkpoint(tmp_dirs, resume=False)
-        _full_run(tmp_dirs, cp_force, _default_agents(), analyst)
+        _full_run(tmp_dirs, cp_force, _default_agents(analyst=analyst))
 
         assert analyst.call_count == 1
 
@@ -455,7 +427,7 @@ class TestForceFlag:
 
         # Force run rewrites it
         cp_force = _checkpoint(tmp_dirs, resume=False)
-        _full_run(tmp_dirs, cp_force, _default_agents(), analyst)
+        _full_run(tmp_dirs, cp_force, _default_agents(analyst=analyst))
 
         cp_check = _checkpoint(tmp_dirs, resume=True)
         reloaded = cp_check.load("skeleton", GlobalSkeleton)
@@ -468,7 +440,7 @@ class TestForceFlag:
         analyst = StubAnalyst(AnalystResult(skeleton=sk, doc_map=dm))
 
         cp_force = _checkpoint(tmp_dirs, resume=False)
-        _full_run(tmp_dirs, cp_force, _default_agents(), analyst)
+        _full_run(tmp_dirs, cp_force, _default_agents(analyst=analyst))
 
         assert (tmp_dirs["cache"] / "testkey" / "skeleton.json").exists()
         assert (tmp_dirs["cache"] / "testkey" / "doc_map.json").exists()
@@ -521,17 +493,17 @@ class TestMultiDeckResume:
                     planner_call_log.append(scope.heading)
                 return _slide_plan()
 
+        analyst = StubAnalyst(AnalystResult(skeleton=sk, doc_map=dm))
         agents = {
+            "analyst": analyst,
             "planner": TrackingPlanner(),
             "writer":  StubWriter(_slides_draft()),
             "critic":  StubCritic(),
             "refiner": StubRefiner(),
         }
 
-        analyst    = StubAnalyst(AnalystResult(skeleton=sk, doc_map=dm))
-        cp_resume  = _checkpoint(tmp_dirs, resume=True)
-
-        _full_run(tmp_dirs, cp_resume, agents, analyst)
+        cp_resume = _checkpoint(tmp_dirs, resume=True)
+        _full_run(tmp_dirs, cp_resume, agents)
 
         # Chapters 1 and 3 were checkpointed — planner should NOT have run for them
         assert "Chapter 1" not in planner_call_log

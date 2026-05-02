@@ -22,6 +22,7 @@ from rich.progress import (
 import config
 from providers.config import ProviderConfig
 from providers.errors import CircuitOpenError, FatalAPIError
+from agents.analyst import AnalystAgent
 from agents.critic import CriticAgent
 from agents.planner import PlannerAgent
 from agents.refiner import RefinerAgent
@@ -164,6 +165,7 @@ def run(
         api_key=_resolve_api_key(provider_key),
     )
     agents = {
+        "analyst": AnalystAgent(provider_instance),
         "planner": PlannerAgent(provider_instance),
         "writer":  WriterAgent(provider_instance, writer_batch_size=config.PIPELINE["writer_batch_size"]),
         "critic":  CriticAgent(provider_instance),
@@ -184,7 +186,7 @@ def run(
         try:
             result, issues, output_path = asyncio.run(
                 _run_pipeline(
-                    pdf_path, provider_instance, agents,
+                    pdf_path, agents,
                     max_cycles, effective_debug, checkpoint,
                     on_progress=on_progress_cb,
                 )
@@ -281,7 +283,6 @@ def _build_checkpoint(
 
 async def _run_pipeline(
     pdf_path: str,
-    provider,
     agents: dict,
     max_review_cycles: int,
     debug: bool,
@@ -290,7 +291,6 @@ async def _run_pipeline(
 ):
     return await pipeline_run(
         file_path=Path(pdf_path).resolve(),
-        provider=provider,
         agents=agents,
         output_dir=Path("outputs").resolve(),
         chunk_size=config.PIPELINE["chunk_size"],
