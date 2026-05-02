@@ -1,10 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SlideStudio</title>
-  <!-- MathJax 3 — renders $$...$$ LaTeX in slide cards -->
+  
+  <!-- Fonts: Refined Serif and Modern Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+  <!-- MathJax 3 -->
   <script>
     window.MathJax = {
       tex: { inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$'], ['\\[','\\]']] },
@@ -12,152 +18,186 @@
     };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" defer></script>
+  
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg:         #0d1117;
-      --surface:    #161b22;
-      --border:     #30363d;
-      --text:       #e6edf3;
-      --muted:      #7d8590;
-      --accent:     #4f9cf9;
-      --accent-dim: #112240;
-      --radius:     12px;
-      --ease:       0.22s ease;
+    /* ── Mu Aesthetic: Color Palettes ───────────────── */
+    :root[data-theme="light"] {
+      --bg:         #f7f7f5; /* Washi Paper */
+      --surface:    #ffffff;
+      --border:     #e2e2df;
+      --text:       #2d2d2d; /* Ink */
+      --muted:      #8c8c88;
+      --accent:     #5e6d5e; /* Moss / Sage */
+      --accent-dim: #f0f0ed;
+      --slide-bg:   #ffffff;
+      --shadow:     0 4px 20px rgba(0,0,0,0.03);
     }
+
+    :root[data-theme="dark"] {
+      --bg:         #0d0d0d; /* Obsidian / Dark Ink */
+      --surface:    #141414;
+      --border:     #262626;
+      --text:       #d1d1d1; /* Silver */
+      --muted:      #666666;
+      --accent:     #8c7a6b; /* Muted Wood */
+      --accent-dim: #1a1a1a;
+      --slide-bg:   #111111;
+      --shadow:     0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       background: var(--bg);
       color: var(--text);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: 'Inter', system-ui, sans-serif;
+      font-weight: 300;
       min-height: 100dvh;
       display: flex;
       flex-direction: column;
+      transition: background 0.5s ease, color 0.5s ease;
+      overflow-x: hidden;
     }
 
-    /* ── Header ─────────────────────────── */
+    /* ── Layout ─────────────────────────── */
     header {
-      padding: 14px 24px;
-      border-bottom: 1px solid var(--border);
+      padding: 32px 48px;
       display: flex;
       align-items: center;
+      justify-content: space-between;
       flex-shrink: 0;
-      min-width: 0;
+      z-index: 10;
     }
 
-    /* ── Breadcrumb ─────────────────────── */
-    .breadcrumb { display: flex; align-items: center; gap: 6px; min-width: 0; }
-    .bc-sep     { color: var(--muted); user-select: none; flex-shrink: 0; font-size: 13px; }
-    .bc-seg     { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
-    .bc-brand   { font-size: 15px; font-weight: 700; letter-spacing: 0.04em; color: var(--accent); flex-shrink: 0; max-width: none; }
-    .bc-link    { color: var(--accent); cursor: pointer; }
-    .bc-link:hover { text-decoration: underline; }
-    .bc-active  { color: var(--muted); }
-
-    /* ── Main ───────────────────────────── */
     main {
       flex: 1;
       display: flex;
       align-items: flex-start;
       justify-content: center;
-      padding: 24px 16px;
+      padding: 0 48px 64px 48px;
     }
+
+    /* ── Theme Toggle ───────────────────── */
+    .theme-toggle {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.3s ease;
+    }
+    .theme-toggle:hover { color: var(--accent); }
+    .theme-toggle svg { width: 20px; height: 20px; stroke-width: 1.5; }
+
+    /* ── Breadcrumb ─────────────────────── */
+    .breadcrumb { display: flex; align-items: center; gap: 12px; }
+    .bc-sep     { color: var(--muted); font-size: 11px; opacity: 0.5; }
+    .bc-seg     { font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
+    .bc-brand   { font-weight: 600; color: var(--text); font-family: 'Cormorant Garamond', serif; text-transform: none; font-size: 20px; margin-right: 12px; }
+    .bc-link    { color: var(--muted); cursor: pointer; transition: color 0.3s ease; }
+    .bc-link:hover { color: var(--text); }
+    .bc-active  { color: var(--muted); opacity: 0.7; }
 
     /* ── State message ──────────────────── */
-    .state-msg { color: var(--muted); font-size: 15px; text-align: center; margin-top: 40px; }
+    .state-msg { color: var(--muted); font-size: 16px; font-family: 'Cormorant Garamond', serif; font-style: italic; margin-top: 80px; text-align: center; }
 
     /* ── Library ────────────────────────── */
-    .library { width: 100%; max-width: 900px; }
-    .library-top { margin-bottom: 24px; }
+    .library { width: 100%; max-width: 1100px; animation: fadeIn 0.8s ease; }
+    .library-top { margin-bottom: 48px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
     .library-search {
       width: 100%;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
+      background: transparent;
+      border: none;
       color: var(--text);
-      font-family: inherit;
-      font-size: 14px;
-      padding: 10px 14px;
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 28px;
       outline: none;
-      transition: border-color var(--ease);
     }
-    .library-search:focus { border-color: var(--accent); }
-    .library-search::placeholder { color: var(--muted); }
+    .library-search::placeholder { color: var(--muted); opacity: 0.3; }
 
-    /* ── Card chips & meta ──────────────── */
-    .card-meta {
-      font-size: 12px;
-      color: var(--muted);
-      margin-top: 6px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    .toc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 32px;
     }
+    .toc-card {
+      padding: 32px 0;
+      cursor: pointer;
+      transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+      border-top: 1px solid var(--border);
+      position: relative;
+    }
+    .toc-card:hover { transform: translateX(8px); }
+    .toc-card::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      width: 0;
+      height: 1px;
+      background: var(--accent);
+      transition: width 0.4s ease;
+    }
+    .toc-card:hover::after { width: 40px; }
+
+    .toc-num   { font-size: 11px; font-weight: 500; color: var(--accent); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 12px; }
+    .toc-label { font-size: 22px; font-family: 'Cormorant Garamond', serif; font-weight: 500; line-height: 1.3; color: var(--text); }
+    .card-meta { font-size: 12px; color: var(--muted); margin-top: 12px; letter-spacing: 0.02em; }
+    
     .chip {
       display: inline-block;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
       text-transform: uppercase;
-      border-radius: 4px;
-      padding: 2px 7px;
-      margin-bottom: 8px;
+      margin-bottom: 16px;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 2px 8px;
+      border-radius: 2px;
     }
-    .chip--multi  { background: rgba(79,156,249,0.15); color: var(--accent); }
-    .chip--single { background: transparent; border: 1px solid var(--border); color: var(--muted); }
 
-    /* ── TOC ────────────────────────────── */
-    .toc { width: 100%; max-width: 900px; }
+    /* ── TOC View ───────────────────────── */
+    .toc { width: 100%; max-width: 1100px; animation: fadeIn 0.8s ease; }
     .toc-heading {
-      font-size: clamp(22px, 4vw, 32px);
-      font-weight: 700;
-      text-align: center;
-      margin-bottom: 6px;
+      font-family: 'Cormorant Garamond', serif;
+      font-size: clamp(32px, 5vw, 48px);
+      font-weight: 500;
+      margin-bottom: 12px;
+      text-align: left;
     }
     .toc-sub {
       color: var(--muted);
-      text-align: center;
       font-size: 14px;
-      margin-bottom: 32px;
+      margin-bottom: 64px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
     }
-    .toc-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-      gap: 14px;
-    }
-    .toc-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 20px 18px;
-      cursor: pointer;
-      transition: border-color var(--ease), background var(--ease), transform var(--ease), box-shadow var(--ease);
-      user-select: none;
-    }
-    .toc-card:hover {
-      border-color: var(--accent);
-      background: var(--accent-dim);
-      transform: translateY(-3px);
-      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-    }
-    .toc-num   { font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
-    .toc-label { font-size: 15px; font-weight: 600; line-height: 1.4; }
 
-    /* ── Slide reel ─────────────────────── */
-    .reel { width: 100%; max-width: 1060px; display: flex; flex-direction: column; gap: 20px; }
+    /* ── Slide Reel ─────────────────────── */
+    .reel { 
+      width: 100%; 
+      max-width: 1200px; 
+      display: flex; 
+      flex-direction: column; 
+      gap: 32px;
+      animation: fadeIn 1s ease;
+    }
 
-    .progress-bar  { width: 100%; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
-    .progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width var(--ease); }
+    .progress-bar  { width: 100%; height: 1px; background: var(--border); overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--accent); transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
 
     .slide-box {
       width: 100%;
       position: relative;
       padding-top: 56.25%; /* 16:9 */
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
+      background: var(--slide-bg);
+      box-shadow: var(--shadow);
       overflow: hidden;
+      border: 1px solid var(--border);
     }
 
     .slide {
@@ -166,108 +206,146 @@
       display: flex;
       flex-direction: column;
       justify-content: center;
-      padding: clamp(28px, 5%, 60px) clamp(32px, 6%, 72px);
+      padding: 8% 10%;
       opacity: 0;
-      transition: opacity var(--ease);
+      transform: translateX(30px);
+      transition: opacity 0.8s ease, transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
       pointer-events: none;
       overflow-y: auto;
     }
-    .slide.active { opacity: 1; pointer-events: auto; }
+    .slide.active { opacity: 1; transform: translateX(0); pointer-events: auto; }
+    .slide.prev   { transform: translateX(-30px); }
 
     .slide-tag {
       font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.1em;
+      font-weight: 500;
+      letter-spacing: 0.2em;
       text-transform: uppercase;
       color: var(--accent);
-      margin-bottom: 14px;
+      margin-bottom: 24px;
     }
     .slide-title {
-      font-size: clamp(20px, 3vw, 34px);
-      font-weight: 700;
-      line-height: 1.2;
-      margin-bottom: 22px;
+      font-family: 'Cormorant Garamond', serif;
+      font-size: clamp(28px, 4vw, 44px);
+      font-weight: 500;
+      line-height: 1.1;
+      margin-bottom: 32px;
+      color: var(--text);
     }
     .slide-body {
-      font-size: clamp(13px, 1.6vw, 17px);
-      line-height: 1.7;
-      color: #c9d1d9;
+      font-size: clamp(15px, 1.8vw, 19px);
+      line-height: 1.8;
+      color: var(--text);
+      opacity: 0.85;
+      font-weight: 400;
     }
 
-    /* ── Math rendering ─────────────────── */
+    /* ── Math & Figures ─────────────────── */
     .slide-math {
-      margin-top: 16px;
-      padding: 12px 16px;
-      background: rgba(79, 156, 249, 0.07);
-      border-left: 3px solid var(--accent);
-      border-radius: 4px;
+      margin-top: 24px;
+      padding: 16px;
+      background: var(--accent-dim);
+      border-left: 1px solid var(--accent);
       font-size: clamp(14px, 1.8vw, 18px);
-      overflow-x: auto;
     }
 
-    /* ── Figure rendering ───────────────── */
     .slide-figure {
-      margin-top: 16px;
+      margin-top: 32px;
       display: flex;
       flex-direction: column;
-      align-items: flex-start;
-      gap: 6px;
+      align-items: center;
+      gap: 12px;
     }
     .slide-figure img {
-      max-width: 100%;
-      max-height: 220px;
-      border-radius: 6px;
+      max-width: 80%;
+      max-height: 300px;
       border: 1px solid var(--border);
-      object-fit: contain;
+      filter: grayscale(0.2);
     }
     .slide-figure figcaption {
-      font-size: 11px;
+      font-size: 12px;
       color: var(--muted);
+      font-family: 'Cormorant Garamond', serif;
       font-style: italic;
     }
 
     /* ── Controls ───────────────────────── */
-    .controls { display: flex; align-items: center; gap: 12px; }
-    .btn {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 8px;
-      padding: 8px 18px;
-      font-size: 13px;
-      font-family: inherit;
-      cursor: pointer;
-      transition: border-color var(--ease), background var(--ease);
-      white-space: nowrap;
+    .controls { 
+      display: flex; 
+      align-items: center; 
+      justify-content: center;
+      gap: 48px;
+      padding-top: 16px;
     }
-    .btn:hover          { border-color: var(--accent); background: var(--accent-dim); }
-    .btn:disabled       { opacity: 0.3; cursor: default; }
-    .btn:disabled:hover { border-color: var(--border); background: var(--surface); }
-    .btn-back           { color: var(--muted); margin-right: auto; }
-    .counter            { font-size: 13px; color: var(--muted); min-width: 56px; text-align: center; }
+    .btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 11px;
+      font-family: 'Inter', sans-serif;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: color 0.3s ease, opacity 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn:hover:not(:disabled) { color: var(--text); }
+    .btn:disabled { opacity: 0.15; cursor: default; }
+    
+    .btn-back-nav { position: absolute; left: 0; }
+    
+    .counter { 
+      font-size: 12px; 
+      color: var(--muted); 
+      font-family: 'Inter', sans-serif;
+      letter-spacing: 0.1em;
+      opacity: 0.6;
+    }
+
+    /* ── Animations ─────────────────────── */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
 
     .hidden { display: none !important; }
+
+    /* Custom scrollbar for Mu feel */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
   </style>
 </head>
 <body>
   <header>
     <nav class="breadcrumb" id="breadcrumb"></nav>
+    <button class="theme-toggle" id="theme-toggle" title="Toggle Theme">
+      <svg id="sun-icon" class="hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z" />
+      </svg>
+      <svg id="moon-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+      </svg>
+    </button>
   </header>
 
   <main>
-    <p class="state-msg" id="msg">Loading…</p>
+    <p class="state-msg" id="msg">Awaiting clarity…</p>
 
     <!-- Library -->
     <div class="library hidden" id="library">
       <div class="library-top">
         <input type="search" class="library-search" id="library-search"
-               placeholder="Search papers…" autocomplete="off">
+               placeholder="Search archives…" autocomplete="off">
       </div>
       <div class="toc-grid" id="library-grid"></div>
       <p class="state-msg hidden" id="library-empty"></p>
     </div>
 
-    <!-- Table of Contents (multi-deck) -->
+    <!-- Table of Contents -->
     <div class="toc hidden" id="toc">
       <h1 class="toc-heading" id="toc-heading"></h1>
       <p  class="toc-sub"     id="toc-sub"></p>
@@ -279,10 +357,10 @@
       <div class="progress-bar"><div class="progress-fill" id="pfill"></div></div>
       <div class="slide-box"  id="sbox"></div>
       <div class="controls">
-        <button class="btn btn-back hidden" id="btn-back">← Back</button>
-        <button class="btn" id="btn-prev" disabled>← Prev</button>
+        <button class="btn btn-back-nav hidden" id="btn-back">← Back</button>
+        <button class="btn" id="btn-prev" disabled>PREVIOUS</button>
         <span   class="counter"           id="counter"></span>
-        <button class="btn" id="btn-next">Next →</button>
+        <button class="btn" id="btn-next">NEXT</button>
       </div>
     </div>
   </main>
@@ -298,6 +376,28 @@
     let currentChapterTitle   = '';
     let fromToc               = false;
     let currentTocFile        = FILE;
+
+    /* ─── Theme Management ────────────────────── */
+    function initTheme() {
+      const saved = localStorage.getItem('theme') || 'dark';
+      setTheme(saved);
+      $('theme-toggle').addEventListener('click', () => {
+        const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        setTheme(next);
+      });
+    }
+
+    function setTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('theme', theme);
+      if (theme === 'dark') {
+        $('sun-icon').classList.remove('hidden');
+        $('moon-icon').classList.add('hidden');
+      } else {
+        $('sun-icon').classList.add('hidden');
+        $('moon-icon').classList.remove('hidden');
+      }
+    }
 
     /* ─── Utilities ──────────────────────────── */
     function hideAll() {
@@ -325,7 +425,7 @@
         if (i > 0) {
           const sep = document.createElement('span');
           sep.className = 'bc-sep';
-          sep.textContent = '›';
+          sep.textContent = '/';
           nav.appendChild(sep);
         }
         const el = document.createElement('span');
@@ -356,8 +456,8 @@
       grid.innerHTML = '';
       if (entries.length === 0) {
         empty.textContent = currentLibraryEntries.length === 0
-          ? 'No papers generated yet. Run  python cli.py run paper.pdf  to get started.'
-          : 'No papers match your search.';
+          ? 'Silence. No archives found.'
+          : 'Nothing matches your search.';
         empty.classList.remove('hidden');
         return;
       }
@@ -365,11 +465,10 @@
       entries.forEach(e => {
         const card       = document.createElement('div');
         card.className   = 'toc-card';
-        const chipClass  = e.type === 'multi_deck' ? 'chip--multi' : 'chip--single';
-        const chipLabel  = e.type === 'multi_deck' ? 'Multi-deck' : 'Single';
+        const chipLabel  = e.type === 'multi_deck' ? 'Series' : 'Single';
         const meta       = buildMeta(e);
         card.innerHTML   =
-          '<div class="chip ' + chipClass + '">' + chipLabel + '</div>' +
+          '<div class="chip">' + chipLabel + '</div>' +
           '<div class="toc-label">'  + esc(e.title) + '</div>' +
           (meta ? '<div class="card-meta">' + esc(meta) + '</div>' : '');
         card.addEventListener('click', () => loadFromLibrary(e));
@@ -382,12 +481,11 @@
       if (e.generated_at) {
         try {
           parts.push(new Date(e.generated_at).toLocaleDateString('en-US', {
-            month: 'short', day: 'numeric', year: 'numeric',
+            month: 'short', year: 'numeric',
           }));
         } catch (_) {}
       }
-      if (e.slide_count) parts.push(e.slide_count + ' slide' + (e.slide_count !== 1 ? 's' : ''));
-      if (e.model)       parts.push(e.model);
+      if (e.slide_count) parts.push(e.slide_count + ' slides');
       return parts.join(' · ');
     }
 
@@ -431,7 +529,7 @@
     /* ─── TOC ────────────────────────────────── */
     function showTOC(data) {
       $('toc-heading').textContent = data.title;
-      $('toc-sub').textContent = data.decks.length + ' chapter' + (data.decks.length !== 1 ? 's' : '') + ' — click to open';
+      $('toc-sub').textContent = data.decks.length + ' chapter' + (data.decks.length !== 1 ? 's' : '');
       const base = currentTocFile
         ? currentTocFile.substring(0, currentTocFile.lastIndexOf('/') + 1)
         : '';
@@ -440,7 +538,7 @@
       data.decks.forEach((d, i) => {
         const c = document.createElement('div');
         c.className = 'toc-card';
-        c.innerHTML = '<div class="toc-num">Chapter ' + (i + 1) + '</div><div class="toc-label">' + esc(d.chapter_title) + '</div>';
+        c.innerHTML = '<div class="toc-num">CH ' + (i + 1) + '</div><div class="toc-label">' + esc(d.chapter_title) + '</div>';
         c.addEventListener('click', () => openChapter(base + d.file, d.chapter_title));
         grid.appendChild(c);
       });
@@ -500,12 +598,10 @@
           '<h2 class="slide-title">' + esc(s.heading)   + '</h2>'  +
           '<p class="slide-body">'   + esc(s.body)       + '</p>';
 
-        // LaTeX — wrap in $$ delimiters for MathJax display rendering
         if (s.latex) {
           inner += '<div class="slide-math">$$' + s.latex + '$$</div>';
         }
 
-        // Figure — look up image by index in the deck's images array
         if (s.image_ref != null) {
           const img = deckImages.find(im => im.index === s.image_ref);
           if (img && img.data_uri) {
@@ -525,7 +621,6 @@
       typeset(box);
     }
 
-    /* Re-render MathJax in the given container after DOM update */
     function typeset(container) {
       if (window.MathJax && MathJax.typesetPromise) {
         MathJax.typesetPromise([container]).catch(err => console.warn('MathJax error:', err));
@@ -535,8 +630,15 @@
     function goTo(n) {
       const all = $('sbox').querySelectorAll('.slide');
       if (n < 0 || n >= all.length) return;
+      
+      const goingForward = n > idx;
+      
       all[idx].classList.remove('active');
+      all[idx].classList.toggle('prev', goingForward);
+      
       idx = n;
+      
+      all[idx].classList.remove('prev');
       all[idx].classList.add('active');
       sync();
     }
@@ -561,6 +663,7 @@
 
     /* ─── Bootstrap ──────────────────────────── */
     async function init() {
+      initTheme();
       showBreadcrumb([{ label: 'SlideStudio', active: true }]);
       if (FILE) {
         try {
@@ -574,7 +677,7 @@
             showReel(data.slides, data.images || []);
           }
         } catch (e) {
-          $('msg').textContent = 'Failed to load: ' + e.message;
+          $('msg').textContent = 'The archvies are unreachable: ' + e.message;
         }
       } else {
         try {
