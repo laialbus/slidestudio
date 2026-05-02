@@ -5,6 +5,7 @@ Uses typer.testing.CliRunner. Mocks pipeline_estimate and pipeline_run
 so no real API calls are made.
 """
 
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -151,3 +152,48 @@ class TestServeSubcommand:
         with patch("cli.resolve_output_path", return_value=None):
             result = runner.invoke(app, ["serve", "paper.pdf"])
         assert "run" in result.output
+
+
+# ──────────────────────────────────────────────────────────────
+# library-refresh subcommand
+# ──────────────────────────────────────────────────────────────
+
+class TestLibraryRefreshSubcommand:
+    def test_exits_zero_when_outputs_dir_exists(self, tmp_path, monkeypatch):
+        (tmp_path / "outputs").mkdir()
+        monkeypatch.chdir(tmp_path)
+        with patch("cli.rebuild_library_manifest", return_value=[]) as mock_rebuild:
+            result = runner.invoke(app, ["library-refresh"])
+        assert result.exit_code == 0
+        mock_rebuild.assert_called_once()
+
+    def test_calls_rebuild_with_outputs_dir(self, tmp_path, monkeypatch):
+        (tmp_path / "outputs").mkdir()
+        monkeypatch.chdir(tmp_path)
+        with patch("cli.rebuild_library_manifest", return_value=[]) as mock_rebuild:
+            runner.invoke(app, ["library-refresh"])
+        assert mock_rebuild.call_args[0][0].name == "outputs"
+
+    def test_prints_paper_count(self, tmp_path, monkeypatch):
+        (tmp_path / "outputs").mkdir()
+        monkeypatch.chdir(tmp_path)
+        with patch("cli.rebuild_library_manifest", return_value=[{"title": "P1"}, {"title": "P2"}]):
+            result = runner.invoke(app, ["library-refresh"])
+        assert "2" in result.output
+
+    def test_singular_paper_label(self, tmp_path, monkeypatch):
+        (tmp_path / "outputs").mkdir()
+        monkeypatch.chdir(tmp_path)
+        with patch("cli.rebuild_library_manifest", return_value=[{"title": "P1"}]):
+            result = runner.invoke(app, ["library-refresh"])
+        assert "paper" in result.output.lower()
+
+    def test_exits_nonzero_when_no_outputs_dir(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)  # no outputs/ here
+        result = runner.invoke(app, ["library-refresh"])
+        assert result.exit_code == 1
+
+    def test_prints_error_when_no_outputs_dir(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(app, ["library-refresh"])
+        assert "outputs" in result.output.lower()

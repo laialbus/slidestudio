@@ -27,6 +27,9 @@ _MIN_FIGURE_HEIGHT     = 20.0         # pt — discard rects too short to be a r
 # Caption pattern — anchored to the start of a text block
 _CAPTION_RE = re.compile(r"^(fig\.?|figure|chart|table)\b", re.IGNORECASE)
 
+# Title extraction: accept spans within this fraction of the max font size on page 1
+_TITLE_FONT_TOLERANCE = 0.95
+
 # Heading boundary: only # and ## (not ### or deeper)
 _HEADING_LINE_RE = re.compile(r"^(#{1,2})(?!#)\s", re.MULTILINE)
 
@@ -65,6 +68,7 @@ class ExtractionResult(BaseModel):
     page_count:   int
     char_count:   int
     ocr_used:     bool
+    pdf_title:    str = ""          # largest-font text on page 1; empty if undetermined
 
 
 # ──────────────────────────────────────────────────────────────
@@ -119,6 +123,7 @@ class PDFExtractor:
         # Extract images as base64 data URIs
         images = _extract_images(doc)
 
+        pdf_title = _extract_pdf_title(doc)
         doc.close()
 
         # Validate and clean malformed Markdown tables before chunking
@@ -144,6 +149,7 @@ class PDFExtractor:
             page_count=page_count,
             char_count=char_count,
             ocr_used=ocr_used,
+            pdf_title=pdf_title,
         )
 
 
@@ -570,6 +576,37 @@ def _render_figure(page, figure_rect: pymupdf.Rect) -> bytes | None:
         except Exception:
             return None
     return None
+
+
+# ──────────────────────────────────────────────────────────────
+# PDF title extraction
+# ──────────────────────────────────────────────────────────────
+
+def _extract_pdf_title(doc) -> str:
+    """
+    Heuristic: the document title is the largest-font text on page 1.
+    Collects all spans at or near the max font size (within _TITLE_FONT_TOLERANCE)
+    and joins them. Returns "" if the document has no pages or no text.
+    """
+    if doc.page_count == 0:
+        return ""
+    spans = [
+        span
+        for block in doc[0].get_text("dict")["blocks"]
+        if block["type"] == 0
+        for line in block.get("lines", [])
+        for span in line.get("spans", [])
+        if span.get("text", "").strip()
+    ]
+    if not spans:
+        return ""
+    max_size = max(s.get("size", 0.0) for s in spans)
+    title = " ".join(
+        s["text"].strip()
+        for s in spans
+        if s.get("size", 0.0) >= max_size * _TITLE_FONT_TOLERANCE
+    )
+    return title[:120].strip()
 
 
 # ──────────────────────────────────────────────────────────────

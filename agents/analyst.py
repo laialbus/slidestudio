@@ -23,8 +23,9 @@ class AnalystAgent(BaseAgent):
         toc_items = extraction.get("toc_items", [])
         headers   = extraction.get("headers", [])
         chunks    = extraction["chunks"]
+        pdf_title = extraction.get("pdf_title", "")
 
-        skeleton = await self._build_skeleton(toc_items, headers)
+        skeleton = await self._build_skeleton(toc_items, headers, pdf_title)
 
         tasks = [
             self._analyse_chunk(chunks[i], skeleton, index=i)
@@ -46,10 +47,10 @@ class AnalystAgent(BaseAgent):
     # ──────────────────────────────────────────────
 
     async def _build_skeleton(
-        self, toc_items: list[dict], headers: list[str]
+        self, toc_items: list[dict], headers: list[str], pdf_title: str = ""
     ) -> GlobalSkeleton:
         if toc_items:
-            return _skeleton_from_toc(toc_items)
+            return _skeleton_from_toc(toc_items, pdf_title)
         raw = self._load_named_prompt("analyst_skeleton")
         prompt = Template(raw).safe_substitute(headers="\n".join(headers))
         return await self._call(prompt, GlobalSkeleton, "")
@@ -160,11 +161,14 @@ class AnalystAgent(BaseAgent):
         return await self._call(prompt, DocumentMap, "")
 
 
-def _skeleton_from_toc(toc_items: list[dict]) -> GlobalSkeleton:
+def _skeleton_from_toc(toc_items: list[dict], pdf_title: str = "") -> GlobalSkeleton:
     """
     Build a GlobalSkeleton directly from the PDF's embedded TOC.
     Each entry is a dict with keys: level (int), heading (str), page (int).
     No LLM call is made — this is the zero-cost path for structured PDFs.
+
+    pdf_title, when non-empty, takes precedence over the first TOC heading.
+    This avoids using section headings like "Abstract" as the document title.
     """
     sections = [
         SectionEntry(
@@ -175,10 +179,13 @@ def _skeleton_from_toc(toc_items: list[dict]) -> GlobalSkeleton:
         for i, item in enumerate(toc_items)
         if item.get("heading", "").strip()
     ]
-    title = next(
-        (item["heading"] for item in toc_items if item.get("level") == 1),
-        toc_items[0].get("heading", "Document") if toc_items else "Document",
-    )
+    if pdf_title:
+        title = pdf_title
+    else:
+        title = next(
+            (item["heading"] for item in toc_items if item.get("level") == 1),
+            toc_items[0].get("heading", "Document") if toc_items else "Document",
+        )
     return GlobalSkeleton(
         title=title[:120],
         document_type="other",

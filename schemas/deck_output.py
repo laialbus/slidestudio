@@ -16,7 +16,10 @@ class DeckOutput(BaseModel):
     Wraps SlidesFinal's slide list alongside the images array so that
     SlidesFinal remains a pure slide-only schema.
     """
-    title:  str
-    type:   str            = "single_deck"
-    slides: list[FinalSlide]
-    images: list[ImageEntry] = []
+    title:        str
+    type:         str            = "single_deck"
+    generated_at: str
+    provider:     str
+    model:        str
+    slides:       list[FinalSlide]
+    images:       list[ImageEntry] = []

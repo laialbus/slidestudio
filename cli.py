@@ -28,6 +28,7 @@ from agents.refiner import RefinerAgent
 from agents.writer import WriterAgent
 from pipeline import estimate as pipeline_estimate
 from pipeline import run as pipeline_run
+from utils.library import rebuild_library_manifest
 from providers.base import BaseProvider
 from utils.checkpoint import Checkpoint, resolve_output_path
 
@@ -227,6 +228,18 @@ def estimate(pdf_path: str):
         provider_key=provider_key,
         model_name=model_name,
     ))
+
+
+@app.command("library-refresh")
+def library_refresh():
+    """Rebuild the library manifest by scanning the outputs/ directory."""
+    outputs_dir = Path("outputs").resolve()
+    if not outputs_dir.is_dir():
+        rprint("[yellow]No outputs/ directory found. Run a pipeline first.[/yellow]")
+        raise typer.Exit(code=1)
+    entries = rebuild_library_manifest(outputs_dir)
+    n = len(entries)
+    rprint(f"[green]Rebuilt library.json — {n} paper{'s' if n != 1 else ''} indexed.[/green]")
 
 
 @app.command()

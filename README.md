@@ -52,7 +52,7 @@ Slides are generated and opened in your browser automatically.
 
 ## CLI Subcommands
 
-SlideStudio exposes three subcommands. Run `python cli.py --help` to list them.
+SlideStudio exposes four subcommands. Run `python cli.py --help` to list them.
 
 ### `run` — generate slides
 
@@ -115,6 +115,16 @@ No output found for 'paper.pdf'.
 Run `python cli.py run paper.pdf` first to generate slides.
 ```
 
+### `library-refresh` — rebuild the library index
+
+Scans the `outputs/` directory and regenerates `outputs/library.json` from scratch. Run this if you manually copied, moved, or deleted output files and the in-browser library no longer reflects the current state.
+
+```bash
+python cli.py library-refresh
+```
+
+Under normal use you never need this — every `run` call automatically upserts the new entry into `library.json`. Use `library-refresh` as a recovery tool.
+
 ---
 
 ## Output formats
@@ -125,6 +135,7 @@ Documents with **3 or fewer chapters** produce a single JSON file:
 
 ```
 outputs/
+├── library.json                    ← auto-maintained library index
 └── attention-is-all-you-need.json
 ```
 
@@ -136,6 +147,7 @@ Documents with **more than 3 chapters** produce one deck per chapter plus an ind
 
 ```
 outputs/
+├── library.json                    ← auto-maintained library index
 └── biology-101-textbook/
     ├── index.json              ← table of contents
     ├── 01_introduction.json
@@ -144,6 +156,10 @@ outputs/
 ```
 
 The viewer shows a chapter grid on load; clicking a chapter transitions into its slide reel. Use the **Back** button or keyboard arrows (← →) to navigate.
+
+### `library.json`
+
+Every `run` automatically upserts an entry into `outputs/library.json` — a flat JSON array sorted newest-first by `generated_at`. Each entry records title, file path, type (`single_deck` / `multi_deck`), slide count, provider, and model. The in-browser library reads this file to populate the home screen.
 
 ---
 
@@ -167,6 +183,20 @@ Add the corresponding key to `.env`:
 OPENAI_API_KEY=sk-...
 GROQ_API_KEY=gsk_...
 ```
+
+---
+
+## Library viewer
+
+The `--open` flag (or `serve`) starts a local HTTP server and opens `exporters/html/index.html` in your browser. The viewer is a single-page app with three states:
+
+| State | What you see |
+|-------|-------------|
+| **Library** | Card grid of every generated deck, sorted newest-first. Shows title, type chip (Single / Multi-deck), date, slide count, and model. Includes a live search bar. |
+| **TOC** | Chapter list for a multi-deck paper, or a direct jump to the reel for single-deck. Breadcrumb shows `Library › Paper Title`. |
+| **Reel** | Scrollable slide deck. Breadcrumb shows `Library › Paper Title › Chapter`. |
+
+Click any breadcrumb segment to navigate back. The viewer also supports deep-linking via the `?file=` query parameter (used automatically by `serve`).
 
 ---
 

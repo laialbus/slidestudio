@@ -42,23 +42,70 @@
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
-      gap: 12px;
       flex-shrink: 0;
+      min-width: 0;
     }
-    .logo   { font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: 0.04em; }
-    .htitle { font-size: 14px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Breadcrumb ─────────────────────── */
+    .breadcrumb { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .bc-sep     { color: var(--muted); user-select: none; flex-shrink: 0; font-size: 13px; }
+    .bc-seg     { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+    .bc-brand   { font-size: 15px; font-weight: 700; letter-spacing: 0.04em; color: var(--accent); flex-shrink: 0; max-width: none; }
+    .bc-link    { color: var(--accent); cursor: pointer; }
+    .bc-link:hover { text-decoration: underline; }
+    .bc-active  { color: var(--muted); }
 
     /* ── Main ───────────────────────────── */
     main {
       flex: 1;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
       padding: 24px 16px;
     }
 
     /* ── State message ──────────────────── */
-    .state-msg { color: var(--muted); font-size: 15px; text-align: center; }
+    .state-msg { color: var(--muted); font-size: 15px; text-align: center; margin-top: 40px; }
+
+    /* ── Library ────────────────────────── */
+    .library { width: 100%; max-width: 900px; }
+    .library-top { margin-bottom: 24px; }
+    .library-search {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color var(--ease);
+    }
+    .library-search:focus { border-color: var(--accent); }
+    .library-search::placeholder { color: var(--muted); }
+
+    /* ── Card chips & meta ──────────────── */
+    .card-meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 6px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .chip {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border-radius: 4px;
+      padding: 2px 7px;
+      margin-bottom: 8px;
+    }
+    .chip--multi  { background: rgba(79,156,249,0.15); color: var(--accent); }
+    .chip--single { background: transparent; border: 1px solid var(--border); color: var(--muted); }
 
     /* ── TOC ────────────────────────────── */
     .toc { width: 100%; max-width: 900px; }
@@ -204,12 +251,21 @@
 </head>
 <body>
   <header>
-    <span class="logo">SlideStudio</span>
-    <span class="htitle" id="htitle"></span>
+    <nav class="breadcrumb" id="breadcrumb"></nav>
   </header>
 
   <main>
     <p class="state-msg" id="msg">Loading…</p>
+
+    <!-- Library -->
+    <div class="library hidden" id="library">
+      <div class="library-top">
+        <input type="search" class="library-search" id="library-search"
+               placeholder="Search papers…" autocomplete="off">
+      </div>
+      <div class="toc-grid" id="library-grid"></div>
+      <p class="state-msg hidden" id="library-empty"></p>
+    </div>
 
     <!-- Table of Contents (multi-deck) -->
     <div class="toc hidden" id="toc">
@@ -236,18 +292,17 @@
     const FILE = new URLSearchParams(location.search).get('file');
 
     let slides = [], deckImages = [], idx = 0;
+    let currentLibraryEntries = [];
+    let libraryLoaded         = false;
+    let currentPaperTitle     = '';
+    let currentChapterTitle   = '';
+    let fromToc               = false;
+    let currentTocFile        = FILE;
 
-    /* ─── bootstrap ──────────────────────────── */
-    async function init() {
-      if (!FILE) { $('msg').textContent = 'No ?file= parameter in URL.'; return; }
-      try {
-        const data = await load(FILE);
-        $('msg').classList.add('hidden');
-        $('htitle').textContent = data.title || '';
-        data.type === 'multi_deck' ? showTOC(data) : showReel(data.slides, data.images || []);
-      } catch (e) {
-        $('msg').textContent = 'Failed to load: ' + e.message;
-      }
+    /* ─── Utilities ──────────────────────────── */
+    function hideAll() {
+      ['msg', 'library', 'toc', 'reel'].forEach(id => $(id).classList.add('hidden'));
+      $('btn-back').classList.add('hidden');
     }
 
     async function load(url) {
@@ -256,28 +311,162 @@
       return r.json();
     }
 
+    function esc(s) {
+      return String(s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    /* ─── Breadcrumb ─────────────────────────── */
+    function showBreadcrumb(segments) {
+      const nav = $('breadcrumb');
+      nav.innerHTML = '';
+      segments.forEach((seg, i) => {
+        if (i > 0) {
+          const sep = document.createElement('span');
+          sep.className = 'bc-sep';
+          sep.textContent = '›';
+          nav.appendChild(sep);
+        }
+        const el = document.createElement('span');
+        const isFirst  = i === 0;
+        const isActive = !!seg.active;
+        el.className = 'bc-seg'
+          + (isFirst  ? ' bc-brand'  : '')
+          + (isActive ? ' bc-active' : ' bc-link');
+        el.textContent = seg.label;
+        if (!isActive && seg.onClick) el.addEventListener('click', seg.onClick);
+        nav.appendChild(el);
+      });
+    }
+
+    /* ─── Library ────────────────────────────── */
+    function showLibrary(entries) {
+      hideAll();
+      currentLibraryEntries = entries;
+      $('library').classList.remove('hidden');
+      showBreadcrumb([{ label: 'SlideStudio', active: true }]);
+      $('library-search').value = '';
+      renderLibraryCards(entries);
+    }
+
+    function renderLibraryCards(entries) {
+      const grid  = $('library-grid');
+      const empty = $('library-empty');
+      grid.innerHTML = '';
+      if (entries.length === 0) {
+        empty.textContent = currentLibraryEntries.length === 0
+          ? 'No papers generated yet. Run  python cli.py run paper.pdf  to get started.'
+          : 'No papers match your search.';
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+      entries.forEach(e => {
+        const card       = document.createElement('div');
+        card.className   = 'toc-card';
+        const chipClass  = e.type === 'multi_deck' ? 'chip--multi' : 'chip--single';
+        const chipLabel  = e.type === 'multi_deck' ? 'Multi-deck' : 'Single';
+        const meta       = buildMeta(e);
+        card.innerHTML   =
+          '<div class="chip ' + chipClass + '">' + chipLabel + '</div>' +
+          '<div class="toc-label">'  + esc(e.title) + '</div>' +
+          (meta ? '<div class="card-meta">' + esc(meta) + '</div>' : '');
+        card.addEventListener('click', () => loadFromLibrary(e));
+        grid.appendChild(card);
+      });
+    }
+
+    function buildMeta(e) {
+      const parts = [];
+      if (e.generated_at) {
+        try {
+          parts.push(new Date(e.generated_at).toLocaleDateString('en-US', {
+            month: 'short', day: 'numeric', year: 'numeric',
+          }));
+        } catch (_) {}
+      }
+      if (e.slide_count) parts.push(e.slide_count + ' slide' + (e.slide_count !== 1 ? 's' : ''));
+      if (e.model)       parts.push(e.model);
+      return parts.join(' · ');
+    }
+
+    $('library-search').addEventListener('input', ev => {
+      const q = ev.target.value.trim().toLowerCase();
+      renderLibraryCards(q
+        ? currentLibraryEntries.filter(e => e.title.toLowerCase().includes(q))
+        : currentLibraryEntries
+      );
+    });
+
+    async function loadFromLibrary(entry) {
+      currentPaperTitle = entry.title;
+      currentTocFile    = entry.file;
+      fromToc = false;
+      try {
+        const data = await load(entry.file);
+        if (entry.type === 'multi_deck') {
+          hideAll();
+          showTOC(data);
+        } else {
+          hideAll();
+          showReel(data.slides, data.images || []);
+        }
+      } catch (e) { alert('Could not load paper: ' + e.message); }
+    }
+
+    async function goLibraryHome() {
+      if (!libraryLoaded) {
+        try {
+          currentLibraryEntries = await load('/outputs/library.json');
+        } catch (_) {
+          currentLibraryEntries = [];
+        }
+        libraryLoaded = true;
+      }
+      fromToc = false;
+      showLibrary(currentLibraryEntries);
+    }
+
     /* ─── TOC ────────────────────────────────── */
     function showTOC(data) {
       $('toc-heading').textContent = data.title;
       $('toc-sub').textContent = data.decks.length + ' chapter' + (data.decks.length !== 1 ? 's' : '') + ' — click to open';
-      const base = FILE.substring(0, FILE.lastIndexOf('/') + 1);
+      const base = currentTocFile
+        ? currentTocFile.substring(0, currentTocFile.lastIndexOf('/') + 1)
+        : '';
       const grid = $('toc-grid');
       grid.innerHTML = '';
       data.decks.forEach((d, i) => {
         const c = document.createElement('div');
         c.className = 'toc-card';
         c.innerHTML = '<div class="toc-num">Chapter ' + (i + 1) + '</div><div class="toc-label">' + esc(d.chapter_title) + '</div>';
-        c.addEventListener('click', () => openChapter(base + d.file));
+        c.addEventListener('click', () => openChapter(base + d.file, d.chapter_title));
         grid.appendChild(c);
       });
       $('toc').classList.remove('hidden');
+      showBreadcrumb([
+        { label: 'SlideStudio', onClick: goLibraryHome },
+        { label: data.title, active: true },
+      ]);
     }
 
-    async function openChapter(url) {
+    function goToToc() {
+      hideAll();
+      fromToc = false;
+      $('toc').classList.remove('hidden');
+      showBreadcrumb([
+        { label: 'SlideStudio', onClick: goLibraryHome },
+        { label: currentPaperTitle, active: true },
+      ]);
+    }
+
+    async function openChapter(url, chapterTitle) {
       try {
         const data = await load(url);
-        $('toc').classList.add('hidden');
-        $('btn-back').classList.remove('hidden');
+        currentChapterTitle = chapterTitle;
+        fromToc = true;
+        hideAll();
         showReel(data.slides, data.images || []);
       } catch (e) { alert('Could not load chapter: ' + e.message); }
     }
@@ -285,6 +474,21 @@
     /* ─── Reel ───────────────────────────────── */
     function showReel(data, images) {
       slides = data; deckImages = images; idx = 0;
+
+      if (fromToc) {
+        $('btn-back').classList.remove('hidden');
+        showBreadcrumb([
+          { label: 'SlideStudio', onClick: goLibraryHome },
+          { label: currentPaperTitle, onClick: goToToc },
+          { label: currentChapterTitle, active: true },
+        ]);
+      } else {
+        showBreadcrumb([
+          { label: 'SlideStudio', onClick: goLibraryHome },
+          { label: currentPaperTitle, active: true },
+        ]);
+      }
+
       const box = $('sbox');
       box.innerHTML = '';
       data.forEach((s, i) => {
@@ -345,24 +549,43 @@
       $('pfill').style.width   = ((idx + 1) / t * 100) + '%';
     }
 
-    function esc(s) {
-      return String(s)
-        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    }
-
     /* ─── Events ─────────────────────────────── */
     $('btn-prev').addEventListener('click', () => goTo(idx - 1));
     $('btn-next').addEventListener('click', () => goTo(idx + 1));
-    $('btn-back').addEventListener('click', () => {
-      $('reel').classList.add('hidden');
-      $('btn-back').classList.add('hidden');
-      $('toc').classList.remove('hidden');
-    });
+    $('btn-back').addEventListener('click', () => goToToc());
     document.addEventListener('keydown', e => {
+      if (document.activeElement === $('library-search')) return;
       if (e.key === 'ArrowLeft')  goTo(idx - 1);
       if (e.key === 'ArrowRight') goTo(idx + 1);
     });
+
+    /* ─── Bootstrap ──────────────────────────── */
+    async function init() {
+      showBreadcrumb([{ label: 'SlideStudio', active: true }]);
+      if (FILE) {
+        try {
+          const data = await load(FILE);
+          currentPaperTitle = data.title || '';
+          if (data.type === 'multi_deck') {
+            hideAll();
+            showTOC(data);
+          } else {
+            hideAll();
+            showReel(data.slides, data.images || []);
+          }
+        } catch (e) {
+          $('msg').textContent = 'Failed to load: ' + e.message;
+        }
+      } else {
+        try {
+          currentLibraryEntries = await load('/outputs/library.json');
+        } catch (_) {
+          currentLibraryEntries = [];
+        }
+        libraryLoaded = true;
+        showLibrary(currentLibraryEntries);
+      }
+    }
 
     init();
   </script>

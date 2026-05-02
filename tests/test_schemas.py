@@ -316,30 +316,46 @@ class TestDeckOutput:
     def _slide(self) -> FinalSlide:
         return FinalSlide(index=1, heading="Slide 1", body="Body text.", tag="Key Concept")
 
+    def _deck(self, **kwargs):
+        defaults = dict(
+            title="My Deck",
+            generated_at="2026-05-01T00:00:00+00:00",
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            slides=[self._slide()],
+        )
+        return DeckOutput(**{**defaults, **kwargs})
+
     def test_valid_construction_no_images(self):
-        out = DeckOutput(title="My Deck", slides=[self._slide()])
+        out = self._deck()
         assert out.title == "My Deck"
         assert out.type == "single_deck"
         assert out.images == []
 
     def test_type_defaults_to_single_deck(self):
-        out = DeckOutput(title="T", slides=[self._slide()])
+        out = self._deck(title="T")
         assert out.type == "single_deck"
 
     def test_images_list_populated(self):
         img = ImageEntry(
             index=0, caption="Figure 1", data_uri="data:image/png;base64,abc", page=1
         )
-        out = DeckOutput(title="T", slides=[self._slide()], images=[img])
+        out = self._deck(title="T", images=[img])
         assert len(out.images) == 1
         assert out.images[0].data_uri.startswith("data:image/")
+
+    def test_new_metadata_fields_stored(self):
+        out = self._deck(generated_at="2026-01-01T00:00:00+00:00", provider="google", model="gemini-2.0-flash")
+        assert out.generated_at == "2026-01-01T00:00:00+00:00"
+        assert out.provider == "google"
+        assert out.model == "gemini-2.0-flash"
 
     def test_slide_latex_and_image_ref_accepted(self):
         slide = FinalSlide(
             index=1, heading="Equations", body="Body.",
             tag="Key Concept", latex=r"\alpha + \beta = \gamma", image_ref=0,
         )
-        out = DeckOutput(title="T", slides=[slide])
+        out = self._deck(title="T", slides=[slide])
         assert out.slides[0].latex is not None
         assert out.slides[0].image_ref == 0
 

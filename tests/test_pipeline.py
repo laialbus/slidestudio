@@ -219,58 +219,80 @@ class TestRoute:
 # Tests — write_output()
 # ──────────────────────────────────────────────────────────────
 
+_PROVIDER = "stub"
+_MODEL    = "stub-model"
+
+
 class TestWriteOutput:
     def test_writes_json_at_slugified_path(self, tmp_path):
-        write_output(_slides_final(), [], "My Test Paper", False, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "My Test Paper", False, tmp_path, _intermediates(), _PROVIDER, _MODEL)
         assert (tmp_path / "my_test_paper.json").exists()
 
     def test_output_is_valid_json(self, tmp_path):
-        write_output(_slides_final(), [], "My Test Paper", False, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "My Test Paper", False, tmp_path, _intermediates(), _PROVIDER, _MODEL)
         data = json.loads((tmp_path / "my_test_paper.json").read_text())
         assert "slides" in data
 
+    def test_output_contains_provider_and_model(self, tmp_path):
+        write_output(_slides_final(), [], "My Test Paper", False, tmp_path, _intermediates(), _PROVIDER, _MODEL)
+        data = json.loads((tmp_path / "my_test_paper.json").read_text())
+        assert data["provider"] == _PROVIDER
+        assert data["model"]    == _MODEL
+
     def test_hostile_title_slugified_correctly(self, tmp_path):
         hostile = "Chapter 1: The /\\ File * System?"
-        write_output(_slides_final(), [], hostile, False, tmp_path, _intermediates())
+        write_output(_slides_final(), [], hostile, False, tmp_path, _intermediates(), _PROVIDER, _MODEL)
         slug = slugify(hostile)
         assert (tmp_path / f"{slug}.json").exists()
 
     def test_hostile_title_output_is_valid_json(self, tmp_path):
         hostile = "Chapter 1: The /\\ File * System?"
-        write_output(_slides_final(), [], hostile, False, tmp_path, _intermediates())
+        write_output(_slides_final(), [], hostile, False, tmp_path, _intermediates(), _PROVIDER, _MODEL)
         slug = slugify(hostile)
         data = json.loads((tmp_path / f"{slug}.json").read_text())
         assert "slides" in data
 
     def test_no_debug_dir_when_debug_false(self, tmp_path):
-        write_output(_slides_final(), [], "Test", False, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "Test", False, tmp_path, _intermediates(), _PROVIDER, _MODEL)
         assert not (tmp_path / "debug").exists()
 
     def test_debug_creates_slide_plan_file(self, tmp_path):
-        write_output(_slides_final(), [], "Test Paper", True, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "Test Paper", True, tmp_path, _intermediates(), _PROVIDER, _MODEL)
         debug_dir = tmp_path / "debug" / slugify("Test Paper")
         assert (debug_dir / "01_slide_plan.json").exists()
 
     def test_debug_creates_slides_draft_file(self, tmp_path):
-        write_output(_slides_final(), [], "Test Paper", True, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "Test Paper", True, tmp_path, _intermediates(), _PROVIDER, _MODEL)
         debug_dir = tmp_path / "debug" / slugify("Test Paper")
         assert (debug_dir / "02_slides_draft.json").exists()
 
     def test_debug_creates_critique_file(self, tmp_path):
-        write_output(_slides_final(), [], "Test Paper", True, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "Test Paper", True, tmp_path, _intermediates(), _PROVIDER, _MODEL)
         debug_dir = tmp_path / "debug" / slugify("Test Paper")
         assert (debug_dir / "03_critique.json").exists()
 
     def test_debug_files_are_valid_json(self, tmp_path):
-        write_output(_slides_final(), [], "Test Paper", True, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "Test Paper", True, tmp_path, _intermediates(), _PROVIDER, _MODEL)
         debug_dir = tmp_path / "debug" / slugify("Test Paper")
         for fname in ["01_slide_plan.json", "02_slides_draft.json", "03_critique.json"]:
             data = json.loads((debug_dir / fname).read_text())
             assert isinstance(data, dict)
 
     def test_debug_dir_uses_slugified_title(self, tmp_path):
-        write_output(_slides_final(), [], "My Paper Title", True, tmp_path, _intermediates())
+        write_output(_slides_final(), [], "My Paper Title", True, tmp_path, _intermediates(), _PROVIDER, _MODEL)
         assert (tmp_path / "debug" / "my_paper_title").is_dir()
+
+    def test_writes_library_manifest(self, tmp_path):
+        write_output(_slides_final(), [], "My Test Paper", False, tmp_path, _intermediates(), _PROVIDER, _MODEL)
+        assert (tmp_path / "library.json").exists()
+
+    def test_library_manifest_contains_entry(self, tmp_path):
+        write_output(_slides_final(), [], "My Test Paper", False, tmp_path, _intermediates(), _PROVIDER, _MODEL)
+        data = json.loads((tmp_path / "library.json").read_text())
+        assert len(data) == 1
+        # manifest title comes from SlidesFinal.title, not the slug title param
+        assert data[0]["title"] == _slides_final().title
+        assert data[0]["type"]  == "single_deck"
 
 
 # ──────────────────────────────────────────────────────────────

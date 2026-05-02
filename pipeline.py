@@ -15,6 +15,7 @@ from schemas.slides_draft import SlidesDraft
 from schemas.slides_final import FinalSlide, SlidesFinal
 from utils.checkpoint import Checkpoint
 from utils.cost_estimator import analyze_pdf_cost
+from utils.library import upsert_library_manifest
 from utils.slugify import slugify
 
 
@@ -48,6 +49,10 @@ def _build_deck_output(
     slides_final: SlidesFinal,
     all_images: list[dict],
     deck_type: str = "single_deck",
+    *,
+    generated_at: str,
+    provider: str,
+    model: str,
 ) -> DeckOutput:
     """Build a DeckOutput, filtering images to only those referenced by the slides."""
     referenced_ids = {
@@ -66,6 +71,9 @@ def _build_deck_output(
     return DeckOutput(
         title=slides_final.title,
         type=deck_type,
+        generated_at=generated_at,
+        provider=provider,
+        model=model,
         slides=slides_final.slides,
         images=deck_images,
     )
@@ -78,13 +86,28 @@ def write_output(
     debug: bool,
     output_dir: Path | str,
     intermediates: dict,
+    provider: str,
+    model: str,
 ) -> Path:
+    now = datetime.now(timezone.utc).isoformat()
     slug = slugify(title)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / f"{slug}.json"
-    deck_output = _build_deck_output(slides_final, all_images)
+    deck_output = _build_deck_output(
+        slides_final, all_images, generated_at=now, provider=provider, model=model
+    )
     output_path.write_text(deck_output.model_dump_json(indent=2), encoding="utf-8")
+    upsert_library_manifest(out_dir, {
+        "title":        deck_output.title,
+        "file":         "/" + output_path.relative_to(out_dir.parent).as_posix(),
+        "type":         "single_deck",
+        "generated_at": now,
+        "provider":     provider,
+        "model":        model,
+        "slide_count":  len(deck_output.slides),
+        "deck_count":   1,
+    })
     if debug:
         _write_debug(title, out_dir, intermediates)
     return output_path
@@ -123,7 +146,11 @@ async def run_single_deck(
             _notify(on_progress, "writer", 1, 1)
             if max_review_cycles > 0:
                 _notify(on_progress, "review", max_review_cycles, max_review_cycles)
-            output_path = write_output(slides_final_cp, images, title, debug, output_dir, {}) if _write else None
+            output_path = write_output(
+                slides_final_cp, images, title, debug, output_dir, {},
+                provider=agents["planner"].provider.name,
+                model=agents["planner"].provider.model,
+            ) if _write else None
             return slides_final_cp, [], output_path
 
     # Planner — load from checkpoint or run
@@ -192,7 +219,11 @@ async def run_single_deck(
     }
 
     if _write:
-        output_path = write_output(slides_final, images, title, debug, output_dir, intermediates)
+        output_path = write_output(
+            slides_final, images, title, debug, output_dir, intermediates,
+            provider=agents["planner"].provider.name,
+            model=agents["planner"].provider.model,
+        )
     else:
         if debug:
             _write_debug(title, output_dir, intermediates)
@@ -208,6 +239,7 @@ def write_deck_index(
     agents: dict,
     output_dir: Path | str,
 ) -> tuple[DeckIndex, Path]:
+    now = datetime.now(timezone.utc).isoformat()
     slug = slugify(title)
     out_dir = Path(output_dir) / slug
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -218,7 +250,9 @@ def write_deck_index(
     decks = []
     for i, (section, slides_final) in enumerate(decks_data, start=1):
         filename = f"{i:02d}_{slugify(section.heading)}.json"
-        deck_output = _build_deck_output(slides_final, images)
+        deck_output = _build_deck_output(
+            slides_final, images, generated_at=now, provider=provider, model=model
+        )
         (out_dir / filename).write_text(
             deck_output.model_dump_json(indent=2), encoding="utf-8"
         )
@@ -227,13 +261,23 @@ def write_deck_index(
     deck_index = DeckIndex(
         title=title,
         type="multi_deck",
-        generated_at=datetime.now(timezone.utc).isoformat(),
+        generated_at=now,
         provider=provider,
         model=model,
         decks=decks,
     )
     index_path = out_dir / "index.json"
     index_path.write_text(deck_index.model_dump_json(indent=2), encoding="utf-8")
+    upsert_library_manifest(Path(output_dir), {
+        "title":        deck_index.title,
+        "file":         "/" + index_path.relative_to(Path(output_dir).parent).as_posix(),
+        "type":         "multi_deck",
+        "generated_at": now,
+        "provider":     provider,
+        "model":        model,
+        "slide_count":  sum(len(sf.slides) for _, sf in decks_data),
+        "deck_count":   len(decks),
+    })
     return deck_index, index_path
 
 
@@ -386,6 +430,7 @@ async def run(
         "toc_items": [item.model_dump() for item in extraction.toc_items],
         "headers":   [item.heading for item in extraction.toc_items],
         "chunks":    extraction.chunks,
+        "pdf_title": extraction.pdf_title,
     }
 
     ck = checkpoint
