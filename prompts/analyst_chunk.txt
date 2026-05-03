@@ -20,11 +20,27 @@ Extract key information from this chunk and return a JSON object with these fiel
    Your output sections must have "importance" and "summary" instead.)
 - figure_purposes: for each [FIGURE_ID: N] marker present in this chunk, classify the reference as:
     - "conceptual": the figure illustrates a design, mechanism, architecture, or system component
-      that is being actively explained in the surrounding text (e.g. "...the offloading policy,
-      as shown in Figure 6..." or "Figure 3 depicts the encoder-decoder structure...").
-    - "evidential": the figure presents performance data, measurements, or results that support
-      a claim (e.g. "Table 3 shows throughput improves..." or "as seen in Figure 8, accuracy
-      drops under high load...").
+      (e.g. "Figure 3 depicts the encoder-decoder structure..." or caption "Figure 1: System Architecture").
+    - "evidential": the figure presents data, measurements, or results supporting a claim
+      (e.g. "as seen in Figure 8, accuracy drops under high load..." or caption "Figure 4: Accuracy vs. Epoch").
+
+  Draw on two signals per figure:
+  - Caption (identity): the [FIGURE_ID: N] marker is appended to the figure's own caption line — read
+    that line as what the figure *is*. Captions containing type words ("Architecture", "Framework",
+    "Pipeline", "Diagram", "Schematic", "Workflow", "Overview") are strong conceptual signals. Captions
+    containing metric or comparison words ("Accuracy", "Throughput", "F1", "Latency", "Results",
+    "Performance", "vs.", "Ablation", "Comparison") are strong evidential signals. Generic captions
+    ("Figure 3" or "Figure 2: Results") are weak signals.
+  - Prose (usage): look at the sentences that cite this figure. Verbs like "depicts", "illustrates",
+    "shows the structure of" point to conceptual; phrases like "shows that X outperforms", "achieves X%",
+    "demonstrates improvement" point to evidential.
+
+  Weigh by quality: if one signal is strong and the other is weak or absent, trust the strong one. If
+  both are strong and agree, classify with high confidence. If both are strong but conflict, reason about
+  which is more reliable for this specific figure — the caption names what the figure *is*; the prose
+  names how it is *being used*, which can mislead (e.g. a design diagram cited to argue a performance
+  point is still a design diagram).
+
   Use the integer figure ID as the JSON key (e.g. {"6": "conceptual", "8": "evidential"}).
   If no [FIGURE_ID: N] markers are present, return {}.
 
