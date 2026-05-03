@@ -372,7 +372,6 @@
 
     let slides = [], deckImages = [], idx = 0;
     let currentLibraryEntries = [];
-    let libraryLoaded         = false;
     let currentPaperTitle     = '';
     let currentChapterTitle   = '';
     let fromToc               = false;
@@ -515,13 +514,11 @@
     }
 
     async function goLibraryHome() {
-      if (!libraryLoaded) {
-        try {
-          currentLibraryEntries = await load('/outputs/library.json');
-        } catch (_) {
-          currentLibraryEntries = [];
-        }
-        libraryLoaded = true;
+      try {
+        currentLibraryEntries = await load('/outputs/library.json');
+        currentLibraryEntries.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+      } catch (_) {
+        currentLibraryEntries = [];
       }
       fromToc = false;
       showLibrary(currentLibraryEntries);
@@ -683,10 +680,10 @@
       } else {
         try {
           currentLibraryEntries = await load('/outputs/library.json');
+          currentLibraryEntries.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
         } catch (_) {
           currentLibraryEntries = [];
         }
-        libraryLoaded = true;
         showLibrary(currentLibraryEntries);
       }
     }

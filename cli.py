@@ -245,8 +245,12 @@ def library_refresh():
 
 
 @app.command()
-def serve(pdf_path: str):
-    """Open the viewer for a previously generated output without re-running the pipeline."""
+def serve(pdf_path: Optional[str] = typer.Argument(None)):
+    """Open the viewer. Omit pdf_path to open the library home."""
+    from exporters.html_server import serve_and_open
+    if pdf_path is None:
+        serve_and_open(None, config.PIPELINE["port"])
+        return
     provider_key = config.PROVIDER
     model_name   = config.MODELS[provider_key]
     output_path  = resolve_output_path(
@@ -260,7 +264,6 @@ def serve(pdf_path: str):
             f"Run [bold]python cli.py run {pdf_path}[/bold] first to generate slides."
         )
         raise typer.Exit(code=1)
-    from exporters.html_server import serve_and_open
     serve_and_open(output_path, config.PIPELINE["port"])
 
 

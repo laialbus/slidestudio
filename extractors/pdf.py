@@ -14,14 +14,14 @@ _CHUNK_CHAR_LIMIT = 8_000
 _OVERLAP_SIZE     = 1_500
 
 # Image filters / rendering
-_MAX_IMAGE_BYTES       = 512 * 1_024  # 512 KB — cap rendered figure size
-_FIGURE_SEARCH_WINDOW  = 500          # pt — vertical scan window from caption edge
-_HAIRLINE_MAX_HEIGHT   = 2.0          # pt — stroke-only paths below this are decorative
-_CAPTION_PADDING       = 3.0          # pt — safety margin around rendered figure rect
-_CAPTION_MERGE_GAP     = 8.0          # pt — max y-gap to absorb continuation caption blocks
-_DRAWING_OVERLAP_FRAC  = 0.4          # drawings must x-overlap caption by this fraction
-_RENDER_DPI            = 150
-_RENDER_DPI_FALLBACK   = 75
+_MAX_IMAGE_BYTES       = 1 * 1_024 * 1_024  # 1 MB — cap rendered figure size
+_FIGURE_SEARCH_WINDOW  = 500              # pt — vertical scan window from caption edge
+_HAIRLINE_MAX_HEIGHT   = 2.0              # pt — stroke-only paths below this are decorative
+_CAPTION_PADDING       = 3.0              # pt — safety margin around rendered figure rect
+_CAPTION_MERGE_GAP     = 8.0              # pt — max y-gap to absorb continuation caption blocks
+_DRAWING_OVERLAP_FRAC  = 0.4              # drawings must x-overlap caption by this fraction
+_RENDER_DPI            = 200
+_RENDER_DPI_FALLBACK   = 100
 _MIN_FIGURE_HEIGHT     = 20.0         # pt — discard rects too short to be a real figure
 
 # Caption pattern — anchored to the start of a text block
@@ -370,7 +370,8 @@ def _scan_figure_captions(blocks: list, page_num: int) -> list[dict]:
     Return one dict per figure/table caption found on the page.
     Adjacent continuation blocks (within _CAPTION_MERGE_GAP) are merged into
     a single caption record, with end-of-block hyphens stripped.
-    Each dict: text, full_bbox (pymupdf.Rect), direction ("above"|"below"), page_num.
+    Each dict: text, full_bbox (pymupdf.Rect), page_num.
+    Direction is detected from drawing evidence in _infer_figure_rect.
     """
     captions: list[dict] = []
     consumed: set[int] = set()
@@ -379,12 +380,9 @@ def _scan_figure_captions(blocks: list, page_num: int) -> list[dict]:
         if block["type"] != 0 or i in consumed:
             continue
         text = _block_text(block)
-        m = _CAPTION_RE.match(text)
-        if not m:
+        if not _CAPTION_RE.match(text):
             continue
 
-        prefix = m.group(1).lower().rstrip(".")
-        direction = "below" if prefix == "table" else "above"
         full_bbox = pymupdf.Rect(block["bbox"])
         merged_text = text
         consumed.add(i)
@@ -411,7 +409,6 @@ def _scan_figure_captions(blocks: list, page_num: int) -> list[dict]:
         captions.append({
             "text": merged_text.strip(),
             "full_bbox": full_bbox,
-            "direction": direction,
             "page_num": page_num,
         })
 
@@ -422,48 +419,94 @@ def _infer_figure_rect(
     page, blocks: list, caption: dict, body_size: float
 ) -> pymupdf.Rect | None:
     """
-    Primary: union bounding boxes of vector drawings that are in the search
-    window and pass the overlap + hairline filters.
-    Fallback: whitespace-gap walk when no qualifying drawings are found.
+    Priority 1 — vector drawings: union bounding boxes of drawing paths on
+    either side of the caption; larger side wins.
+    Priority 2 — raster images: type-1 blocks (PNG/JPEG XObjects) invisible to
+    get_drawings(); use their page bbox directly.
+    Priority 3 — whitespace gap walk on both sides; larger rect wins.
+    Direction is always inferred from evidence, not assumed from caption keyword.
     """
     full_bbox: pymupdf.Rect = caption["full_bbox"]
-    direction: str = caption["direction"]
     page_rect = page.rect
+    drawings  = page.get_drawings()
 
-    if direction == "above":
-        search_top = max(page_rect.y0, full_bbox.y0 - _FIGURE_SEARCH_WINDOW)
-        candidates = [
-            d["rect"] for d in page.get_drawings()
-            if d["rect"].y1 <= full_bbox.y0 + 2
-            and d["rect"].y0 >= search_top
-            and _x_overlaps(d["rect"], full_bbox)
-            and not _is_hairline(d)
-        ]
-    else:  # "below" for tables
-        search_bottom = min(page_rect.y1, full_bbox.y1 + _FIGURE_SEARCH_WINDOW)
-        candidates = [
-            d["rect"] for d in page.get_drawings()
-            if d["rect"].y0 >= full_bbox.y1 - 2
-            and d["rect"].y1 <= search_bottom
-            and _x_overlaps(d["rect"], full_bbox)
-            and not _is_hairline(d)
-        ]
+    above_cands = [
+        d["rect"] for d in drawings
+        if d["rect"].y1 <= full_bbox.y0 + 2
+        and d["rect"].y0 >= max(page_rect.y0, full_bbox.y0 - _FIGURE_SEARCH_WINDOW)
+        and _x_overlaps(d["rect"], full_bbox)
+        and not _is_hairline(d)
+    ]
+    below_cands = [
+        d["rect"] for d in drawings
+        if d["rect"].y0 >= full_bbox.y1 - 2
+        and d["rect"].y1 <= min(page_rect.y1, full_bbox.y1 + _FIGURE_SEARCH_WINDOW)
+        and _x_overlaps(d["rect"], full_bbox)
+        and not _is_hairline(d)
+    ]
 
-    if candidates:
-        union: pymupdf.Rect = candidates[0]
-        for r in candidates[1:]:
-            union = union | r
+    def _union(rects: list) -> pymupdf.Rect:
+        u = rects[0]
+        for r in rects[1:]:
+            u = u | r
+        return u
+
+    if above_cands or below_cands:
+        if above_cands and below_cands:
+            au, bu = _union(above_cands), _union(below_cands)
+            best = au if au.get_area() >= bu.get_area() else bu
+        else:
+            best = _union(above_cands or below_cands)
         padded = pymupdf.Rect(
-            union.x0 - _CAPTION_PADDING,
-            union.y0 - _CAPTION_PADDING,
-            union.x1 + _CAPTION_PADDING,
-            union.y1 + _CAPTION_PADDING,
+            best.x0 - _CAPTION_PADDING,
+            best.y0 - _CAPTION_PADDING,
+            best.x1 + _CAPTION_PADDING,
+            best.y1 + _CAPTION_PADDING,
         )
         result = padded & page_rect
         if not result.is_empty and result.height >= _MIN_FIGURE_HEIGHT:
             return result
 
-    return _whitespace_fallback(page, blocks, caption, body_size)
+    # Raster image fallback — type-1 blocks are PNG/JPEG XObjects invisible to
+    # get_drawings(). Their bbox gives the exact page position directly.
+    above_img = [
+        pymupdf.Rect(b["bbox"]) for b in blocks
+        if b["type"] == 1
+        and pymupdf.Rect(b["bbox"]).y1 <= full_bbox.y0 + 2
+        and pymupdf.Rect(b["bbox"]).y0 >= max(page_rect.y0, full_bbox.y0 - _FIGURE_SEARCH_WINDOW)
+        and _x_overlaps(pymupdf.Rect(b["bbox"]), full_bbox)
+    ]
+    below_img = [
+        pymupdf.Rect(b["bbox"]) for b in blocks
+        if b["type"] == 1
+        and pymupdf.Rect(b["bbox"]).y0 >= full_bbox.y1 - 2
+        and pymupdf.Rect(b["bbox"]).y1 <= min(page_rect.y1, full_bbox.y1 + _FIGURE_SEARCH_WINDOW)
+        and _x_overlaps(pymupdf.Rect(b["bbox"]), full_bbox)
+    ]
+    if above_img or below_img:
+        if above_img and below_img:
+            au, bu = _union(above_img), _union(below_img)
+            best = au if au.get_area() >= bu.get_area() else bu
+        else:
+            best = _union(above_img or below_img)
+        padded = pymupdf.Rect(
+            best.x0 - _CAPTION_PADDING,
+            best.y0 - _CAPTION_PADDING,
+            best.x1 + _CAPTION_PADDING,
+            best.y1 + _CAPTION_PADDING,
+        )
+        result = padded & page_rect
+        if not result.is_empty and result.height >= _MIN_FIGURE_HEIGHT:
+            return result
+
+    # No qualifying drawings or images — try whitespace fallback on both sides and
+    # return whichever region is larger.
+    above_rect = _whitespace_fallback(page, blocks, caption, body_size, "above")
+    below_rect = _whitespace_fallback(page, blocks, caption, body_size, "below")
+    candidates = [r for r in (above_rect, below_rect) if r is not None]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda r: r.get_area())
 
 
 def _x_overlaps(drawing_rect: pymupdf.Rect, caption_bbox: pymupdf.Rect) -> bool:
@@ -479,7 +522,7 @@ def _is_hairline(drawing: dict) -> bool:
 
 
 def _whitespace_fallback(
-    page, blocks: list, caption: dict, body_size: float
+    page, blocks: list, caption: dict, body_size: float, direction: str
 ) -> pymupdf.Rect | None:
     """
     Find the figure region by locating the nearest body-text block on the
@@ -488,7 +531,6 @@ def _whitespace_fallback(
     found within the vertical window.
     """
     full_bbox: pymupdf.Rect = caption["full_bbox"]
-    direction: str = caption["direction"]
     page_rect = page.rect
 
     if direction == "above":

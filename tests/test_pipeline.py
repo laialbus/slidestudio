@@ -99,7 +99,7 @@ class StubPlanner:
         self.call_count = 0
         self.provider  = types.SimpleNamespace(name="stub", model="stub-model")
 
-    async def run(self, doc_map, skeleton, chunk_images=None, scope=None):
+    async def run(self, doc_map, skeleton, chunk_images=None, figure_purposes=None, scope=None):
         if self.call_log is not None:
             self.call_log.append("planner")
         self.call_count += 1

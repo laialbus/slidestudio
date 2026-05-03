@@ -488,7 +488,7 @@ class TestMultiDeckResume:
         class TrackingPlanner:
             provider = _DummyProvider()
 
-            async def run(self, doc_map, skeleton, chunk_images=None, scope=None):
+            async def run(self, doc_map, skeleton, chunk_images=None, figure_purposes=None, scope=None):
                 if scope:
                     planner_call_log.append(scope.heading)
                 return _slide_plan()

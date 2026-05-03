@@ -77,7 +77,7 @@ def _skeleton() -> GlobalSkeleton:
     )
 
 
-def _slide(index: int, section: str = "Introduction") -> PlannedSlide:
+def _slide(index: int, section: str = "Introduction", wants_image: bool = False) -> PlannedSlide:
     return PlannedSlide(
         index=index,
         tag="Key Concept",
@@ -85,6 +85,7 @@ def _slide(index: int, section: str = "Introduction") -> PlannedSlide:
         intention="Explain the key idea.",
         emphasis="Remember this point.",
         chunk_indices=[0],
+        wants_image=wants_image,
     )
 
 
@@ -210,9 +211,9 @@ class TestPlannerWithScope:
 
 class TestAssignImageRefs:
     def _plan(self, slides: list[PlannedSlide]) -> SlidePlan:
-        return SlidePlan(title="Test", total_slides=len(slides), slides=slides)
+        return SlidePlan(title="Test", total_slides=max(4, len(slides)), slides=slides)
 
-    def _slide(self, index: int, chunk_indices: list[int]) -> PlannedSlide:
+    def _slide(self, index: int, chunk_indices: list[int], wants_image: bool = False) -> PlannedSlide:
         return PlannedSlide(
             index=index,
             tag="Key Concept",
@@ -220,65 +221,138 @@ class TestAssignImageRefs:
             intention="Explain.",
             emphasis="Note.",
             chunk_indices=chunk_indices,
+            wants_image=wants_image,
         )
 
-    def test_figure_assigned_when_chunk_owns_it(self):
-        plan = self._plan([self._slide(1, [0]), self._slide(2, [1]),
-                           self._slide(3, [1]), self._slide(4, [2])])
-        chunk_images = [[5], [], [], []]
-        result = _assign_image_refs(plan, chunk_images)
+    def test_figure_assigned_when_chunk_owns_conceptual_figure(self):
+        slides = [
+            self._slide(1, [0], wants_image=True),
+            self._slide(2, [1]),
+            self._slide(3, [1]),
+            self._slide(4, [2]),
+        ]
+        plan = self._plan(slides)
+        chunk_images    = [[5], [], [], []]
+        figure_purposes = [{5: "conceptual"}, {}, {}, {}]
+        result = _assign_image_refs(plan, chunk_images, figure_purposes)
         assert result.slides[0].image_ref == 5
 
     def test_no_figure_when_chunk_has_none(self):
         plan = self._plan([self._slide(i + 1, [i]) for i in range(4)])
         chunk_images = [[], [], [], []]
-        result = _assign_image_refs(plan, chunk_images)
+        result = _assign_image_refs(plan, chunk_images, [])
         for slide in result.slides:
             assert slide.image_ref is None
 
     def test_deduplication_prevents_same_figure_on_two_slides(self):
-        # Both slides reference chunk 0 which owns figure 3
-        plan = self._plan([self._slide(1, [0]), self._slide(2, [0]),
-                           self._slide(3, [1]), self._slide(4, [1])])
-        chunk_images = [[3], [], [], []]
-        result = _assign_image_refs(plan, chunk_images)
+        slides = [
+            self._slide(1, [0], wants_image=True),
+            self._slide(2, [0], wants_image=True),
+            self._slide(3, [1]),
+            self._slide(4, [1]),
+        ]
+        plan = self._plan(slides)
+        chunk_images    = [[3], [], [], []]
+        figure_purposes = [{3: "conceptual"}, {}, {}, {}]
+        result = _assign_image_refs(plan, chunk_images, figure_purposes)
         assert result.slides[0].image_ref == 3
         assert result.slides[1].image_ref is None
 
     def test_first_slide_wins_deduplication(self):
-        # Slides 1 and 2 both select chunk 0 (figure 7); slide 1 appears first
-        plan = self._plan([self._slide(1, [0]), self._slide(2, [0]),
-                           self._slide(3, [1]), self._slide(4, [1])])
-        chunk_images = [[7], [], [], []]
-        result = _assign_image_refs(plan, chunk_images)
+        slides = [
+            self._slide(1, [0], wants_image=True),
+            self._slide(2, [0], wants_image=True),
+            self._slide(3, [1]),
+            self._slide(4, [1]),
+        ]
+        plan = self._plan(slides)
+        chunk_images    = [[7], [], [], []]
+        figure_purposes = [{7: "conceptual"}, {}, {}, {}]
+        result = _assign_image_refs(plan, chunk_images, figure_purposes)
         refs = [s.image_ref for s in result.slides]
         assert refs.count(7) == 1
         assert refs[0] == 7
 
-    def test_multiple_figures_in_chunk_uses_first(self):
-        plan = self._plan([self._slide(i + 1, [i]) for i in range(4)])
-        chunk_images = [[2, 3], [], [], []]
-        result = _assign_image_refs(plan, chunk_images)
+    def test_multiple_figures_in_chunk_uses_first_conceptual(self):
+        slides = [self._slide(i + 1, [i], wants_image=(i == 0)) for i in range(4)]
+        plan = self._plan(slides)
+        chunk_images    = [[2, 3], [], [], []]
+        figure_purposes = [{2: "conceptual", 3: "conceptual"}, {}, {}, {}]
+        result = _assign_image_refs(plan, chunk_images, figure_purposes)
         assert result.slides[0].image_ref == 2
 
     def test_out_of_range_chunk_index_ignored(self):
-        plan = self._plan([self._slide(1, [99]), self._slide(2, [0]),
-                           self._slide(3, [1]), self._slide(4, [2])])
-        chunk_images = [[5], [], []]
-        result = _assign_image_refs(plan, chunk_images)
+        slides = [
+            self._slide(1, [99], wants_image=True),
+            self._slide(2, [0],  wants_image=True),
+            self._slide(3, [1]),
+            self._slide(4, [2]),
+        ]
+        plan = self._plan(slides)
+        chunk_images    = [[5], [], []]
+        figure_purposes = [{5: "conceptual"}, {}, {}]
+        result = _assign_image_refs(plan, chunk_images, figure_purposes)
         assert result.slides[0].image_ref is None
         assert result.slides[1].image_ref == 5
 
     def test_empty_chunk_images_assigns_nothing(self):
-        plan = self._plan([self._slide(i + 1, [0]) for i in range(4)])
-        result = _assign_image_refs(plan, [])
+        plan = self._plan([self._slide(i + 1, [0], wants_image=True) for i in range(4)])
+        result = _assign_image_refs(plan, [], [])
         for slide in result.slides:
             assert slide.image_ref is None
 
     def test_original_slide_plan_not_mutated(self):
-        plan = self._plan([self._slide(1, [0]), self._slide(2, [0]),
-                           self._slide(3, [1]), self._slide(4, [1])])
-        chunk_images = [[3], [], [], []]
-        _assign_image_refs(plan, chunk_images)
+        slides = [
+            self._slide(1, [0], wants_image=True),
+            self._slide(2, [0], wants_image=True),
+            self._slide(3, [1]),
+            self._slide(4, [1]),
+        ]
+        plan = self._plan(slides)
+        chunk_images    = [[3], [], [], []]
+        figure_purposes = [{3: "conceptual"}, {}, {}, {}]
+        _assign_image_refs(plan, chunk_images, figure_purposes)
         for slide in plan.slides:
             assert slide.image_ref is None
+
+    # ── New tests for wants_image / conceptual gate ──────────────
+
+    def test_wants_image_false_skips_figure_even_if_conceptual(self):
+        slides = [self._slide(1, [0], wants_image=False)]
+        plan = self._plan(slides)
+        chunk_images    = [[5]]
+        figure_purposes = [{5: "conceptual"}]
+        result = _assign_image_refs(plan, chunk_images, figure_purposes)
+        assert result.slides[0].image_ref is None
+
+    def test_evidential_figure_not_assigned_even_when_wants_image(self):
+        slides = [self._slide(1, [0], wants_image=True)]
+        plan = self._plan(slides)
+        chunk_images    = [[5]]
+        figure_purposes = [{5: "evidential"}]
+        result = _assign_image_refs(plan, chunk_images, figure_purposes)
+        assert result.slides[0].image_ref is None
+
+    def test_conceptual_figure_assigned_when_wants_image(self):
+        slides = [self._slide(1, [0], wants_image=True)]
+        plan = self._plan(slides)
+        chunk_images    = [[5]]
+        figure_purposes = [{5: "conceptual"}]
+        result = _assign_image_refs(plan, chunk_images, figure_purposes)
+        assert result.slides[0].image_ref == 5
+
+    def test_empty_figure_purposes_assigns_nothing(self):
+        slides = [self._slide(1, [0], wants_image=True)]
+        plan = self._plan(slides)
+        chunk_images = [[5]]
+        result = _assign_image_refs(plan, chunk_images, [])
+        assert result.slides[0].image_ref is None
+
+    def test_conceptual_in_other_chunk_satisfies_gate(self):
+        # Slide references chunks 0 and 1; figure 9 is conceptual in chunk 1
+        slides = [self._slide(1, [0, 1], wants_image=True)]
+        plan = self._plan(slides)
+        chunk_images    = [[], [9]]
+        figure_purposes = [{}, {9: "conceptual"}]
+        result = _assign_image_refs(plan, chunk_images, figure_purposes)
+        assert result.slides[0].image_ref == 9

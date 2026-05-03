@@ -153,6 +153,19 @@ class TestServeSubcommand:
             result = runner.invoke(app, ["serve", "paper.pdf"])
         assert "run" in result.output
 
+    def test_serve_without_pdf_opens_library(self):
+        with patch("exporters.html_server.serve_and_open") as mock_serve:
+            result = runner.invoke(app, ["serve"])
+        assert result.exit_code == 0
+        mock_serve.assert_called_once()
+        assert mock_serve.call_args[0][0] is None
+
+    def test_serve_without_pdf_does_not_call_resolve_output_path(self):
+        with patch("cli.resolve_output_path") as mock_resolve, \
+             patch("exporters.html_server.serve_and_open"):
+            runner.invoke(app, ["serve"])
+        mock_resolve.assert_not_called()
+
 
 # ──────────────────────────────────────────────────────────────
 # library-refresh subcommand

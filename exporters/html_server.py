@@ -8,14 +8,16 @@ from rich import print as rprint
 from rich.panel import Panel
 
 
-def serve_and_open(output_path: Path, port: int) -> None:
+def serve_and_open(output_path: Path | None, port: int) -> None:
     serve_dir = Path.cwd()
-    try:
-        relative = output_path.relative_to(serve_dir)
-    except ValueError:
-        relative = output_path
-
-    viewer_url = f"http://localhost:{port}/exporters/html/index.html?file=/{relative}"
+    if output_path is not None:
+        try:
+            relative = output_path.relative_to(serve_dir)
+        except ValueError:
+            relative = output_path
+        viewer_url = f"http://localhost:{port}/exporters/html/index.html?file=/{relative}"
+    else:
+        viewer_url = f"http://localhost:{port}/exporters/html/index.html"
 
     class _Handler(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):

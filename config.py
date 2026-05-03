@@ -9,7 +9,7 @@ MODELS = {
     "openai":      "gpt-4o",
     "groq":        "llama-3.1-70b-versatile",
     "ollama":      "llama3.1",
-    "google":      "gemini-2.5-flash",     # "gemini-2.5-flash-lite"
+    "google":      "gemini-2.5-flash-lite",     # "gemini-2.5-flash-lite"
     "google-fast": "gemma-4-31b-it",
 }
 

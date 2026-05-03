@@ -6,7 +6,7 @@ $global_skeleton
 CHUNK $chunk_index:
 $chunk_text
 
-Extract key information from this chunk and return a DocumentMap JSON object with these fields:
+Extract key information from this chunk and return a JSON object with these fields:
 - title: document title (from global structure)
 - document_type: one of "research_paper", "textbook", "lecture_notes", "other"
 - technical_level: one of "beginner", "intermediate", "advanced"
@@ -18,8 +18,15 @@ Extract key information from this chunk and return a DocumentMap JSON object wit
     - summary: what this chunk covers in 1-3 sentences  ← required; NOT "level" or "position"
   (The global structure above has "level" and "position" fields — those are input context only.
    Your output sections must have "importance" and "summary" instead.)
-
-If the chunk contains [FIGURE_ID: N] markers, a figure at that index was successfully extracted and will be embedded alongside the corresponding slide. Note the figure's caption in the relevant section summary.
+- figure_purposes: for each [FIGURE_ID: N] marker present in this chunk, classify the reference as:
+    - "conceptual": the figure illustrates a design, mechanism, architecture, or system component
+      that is being actively explained in the surrounding text (e.g. "...the offloading policy,
+      as shown in Figure 6..." or "Figure 3 depicts the encoder-decoder structure...").
+    - "evidential": the figure presents performance data, measurements, or results that support
+      a claim (e.g. "Table 3 shows throughput improves..." or "as seen in Figure 8, accuracy
+      drops under high load...").
+  Use the integer figure ID as the JSON key (e.g. {"6": "conceptual", "8": "evidential"}).
+  If no [FIGURE_ID: N] markers are present, return {}.
 
 If the chunk contains [FIGURE EXCLUDED: ...] or [TABLE EXCLUDED: ...] markers, reference them explicitly in the relevant section summary so downstream agents are aware of the omitted visual content.
 

@@ -19,6 +19,13 @@ Return a JSON object with:
   - intention: what this slide is meant to teach (max 200 chars)
   - emphasis: what the viewer should walk away remembering (max 200 chars)
   - chunk_indices: list of 1, 2, or 3 integer chunk IDs (NEVER empty, NEVER 4 or more) whose raw text is needed to write this slide accurately
+  - wants_image: set to true ONLY when ALL of these hold:
+      (a) the slide tag is "Key Concept", "Definition", or "Introduction"
+      (b) the slide's intention is to explain a design, mechanism, architecture, or system component
+          (not to present results, comparisons, or performance data)
+      (c) a diagram or illustration would help a student form a mental model of the concept
+      Set to false for "Data Point", "Insight", "Takeaway", "Summary", and "Example" slides,
+      and for any slide whose content is primarily about measurements or experimental outcomes.
 
 Slide design rules for a college student audience:
 - For every 3 "Key Concept" or "Definition" slides, schedule at least 1

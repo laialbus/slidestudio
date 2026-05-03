@@ -14,6 +14,7 @@ from agents.analyst import AnalystAgent, AnalystResult
 from providers.base import BaseProvider
 from providers.config import ProviderConfig
 from schemas.chapter_map import ChapterMap
+from schemas.chunk_map import ChunkMap
 from schemas.document_map import DocumentMap, Section
 from schemas.global_skeleton import GlobalSkeleton, SectionEntry
 
@@ -88,6 +89,18 @@ def _doc_map(summary: str = "A section summary.") -> DocumentMap:
         core_thesis="A thesis statement.",
         key_concepts=["concept"],
         sections=[Section(heading="Introduction", importance="high", summary=summary)],
+    )
+
+
+def _chunk_map(summary: str = "A section summary.", figure_purposes: dict | None = None) -> ChunkMap:
+    return ChunkMap(
+        title="Test Paper",
+        document_type="research_paper",
+        technical_level="advanced",
+        core_thesis="A thesis statement.",
+        key_concepts=["concept"],
+        sections=[Section(heading="Introduction", importance="high", summary=summary)],
+        figure_purposes=figure_purposes or {},
     )
 
 
@@ -228,21 +241,14 @@ class TestFigurePlaceholderFlowThrough:
         sk = _skeleton(sections=[
             SectionEntry(heading="Architecture", level=1, position=0),
         ])
-        doc_with_figure = DocumentMap(
-            title="Test Paper",
-            document_type="research_paper",
-            technical_level="advanced",
-            core_thesis="A thesis.",
-            key_concepts=["transformer", "attention"],
-            sections=[Section(
-                heading="Architecture",
-                importance="high",
-                summary=f"The model uses self-attention. {self.FIGURE_TEXT}",
-            )],
+        chunk_with_figure = _chunk_map(
+            summary=f"The model uses self-attention. {self.FIGURE_TEXT}",
         )
+        chunk_with_figure.sections[0].heading = "Architecture"
+        chunk_with_figure.sections[0].importance = "high"
         return StubProvider({
             GlobalSkeleton: [sk],
-            DocumentMap:    [doc_with_figure],
+            ChunkMap:       [chunk_with_figure],
         })
 
     def test_figure_text_in_single_chunk_result(self):
@@ -256,23 +262,23 @@ class TestFigurePlaceholderFlowThrough:
         all_summaries = " ".join(s.summary for s in result.doc_map.sections)
         assert "[FIGURE EXCLUDED:" in all_summaries
 
-    def test_single_chunk_skips_merge_returns_directly(self):
+    def test_single_chunk_result_is_valid_doc_map(self):
         stub  = self._make_stub()
         agent = AnalystAgent(stub)
-        expected = stub._responses[DocumentMap][0]
-        result   = _run(agent.run({
+        result = _run(agent.run({
             "headers": ["Architecture"],
             "chunks":  ["chunk text with figure placeholder"],
         }))
-        assert result.doc_map is expected
+        assert isinstance(result.doc_map, DocumentMap)
+        assert result.doc_map.title == "Test Paper"
 
     def test_figure_text_preserved_through_merge(self):
         """With two chunks the merge path runs; figure text must reach final DocumentMap."""
         sk = _skeleton(sections=[
             SectionEntry(heading="Intro", level=1, position=0),
         ])
-        doc0 = _doc_map(f"Chunk 0 text. {self.FIGURE_TEXT}")
-        doc1 = _doc_map("Chunk 1 text.")
+        chunk0 = _chunk_map(f"Chunk 0 text. {self.FIGURE_TEXT}")
+        chunk1 = _chunk_map("Chunk 1 text.")
         chap = _chapter_map()
         final = DocumentMap(
             title="Test Paper",
@@ -288,7 +294,8 @@ class TestFigurePlaceholderFlowThrough:
         )
         stub  = StubProvider({
             GlobalSkeleton: [sk],
-            DocumentMap:    [doc0, doc1, final],
+            ChunkMap:       [chunk0, chunk1],
+            DocumentMap:    [final],
             ChapterMap:     [chap],
         })
         agent = AnalystAgent(stub)
@@ -307,13 +314,14 @@ class TestFigurePlaceholderFlowThrough:
 
 class TestConcurrentChunkAnalysis:
     def _make_multi_chunk_stub(self, n: int):
-        sk       = _skeleton(sections=[SectionEntry(heading="Ch1", level=1, position=0)])
-        doc_maps = [_doc_map(f"Summary chunk {i}") for i in range(n)]
-        chap     = _chapter_map()
-        final    = _doc_map("Final merged.")
+        sk         = _skeleton(sections=[SectionEntry(heading="Ch1", level=1, position=0)])
+        chunk_maps = [_chunk_map(f"Summary chunk {i}") for i in range(n)]
+        chap       = _chapter_map()
+        final      = _doc_map("Final merged.")
         return StubProvider({
             GlobalSkeleton: [sk],
-            DocumentMap:    doc_maps + [final],
+            ChunkMap:       chunk_maps,
+            DocumentMap:    [final],
             ChapterMap:     [chap],
         })
 
@@ -327,8 +335,9 @@ class TestConcurrentChunkAnalysis:
         }))
         assert isinstance(result, AnalystResult)
         assert isinstance(result.doc_map, DocumentMap)
-        # n DocumentMap calls for chunks + 1 for the final document merge
-        assert stub._indices.get(DocumentMap, 0) == n + 1
+        # n ChunkMap calls for chunks + 1 DocumentMap for the document merge
+        assert stub._indices.get(ChunkMap, 0) == n
+        assert stub._indices.get(DocumentMap, 0) == 1
 
     def test_chunk_analysis_calls_provider_per_chunk(self):
         n     = 5
@@ -338,23 +347,25 @@ class TestConcurrentChunkAnalysis:
             "headers": ["Ch1"],
             "chunks":  ["chunk"] * n,
         }))
-        doc_calls = stub.call_log.count(DocumentMap)
-        # n chunk calls + 1 document-merge call
-        assert doc_calls == n + 1
+        chunk_calls = stub.call_log.count(ChunkMap)
+        doc_calls   = stub.call_log.count(DocumentMap)
+        assert chunk_calls == n   # one ChunkMap call per chunk
+        assert doc_calls   == 1   # one DocumentMap call for the document-level merge
 
     def test_single_chunk_no_merge_called(self):
-        sk   = _skeleton()
-        doc  = _doc_map()
+        sk        = _skeleton()
+        chunk_map = _chunk_map()
         stub = StubProvider({
             GlobalSkeleton: [sk],
-            DocumentMap:    [doc],
+            ChunkMap:       [chunk_map],
         })
         agent = AnalystAgent(stub)
         result = _run(agent.run({
             "headers": ["Introduction"],
             "chunks":  ["single chunk"],
         }))
-        assert result.doc_map is doc
+        assert isinstance(result.doc_map, DocumentMap)
+        assert result.doc_map.title == chunk_map.title
         assert ChapterMap not in stub._indices
 
     def test_skeleton_call_happens_before_chunks(self):
@@ -373,14 +384,14 @@ class TestConcurrentChunkAnalysis:
             SectionEntry(heading="Ch1", level=1, position=0),
             SectionEntry(heading="Ch2", level=1, position=3),
         ])
-        n    = 6
-        doc_maps = [_doc_map(f"Summary {i}") for i in range(n)]
-        # Two chapters → two ChapterMap responses
-        chap_maps = [_chapter_map("Ch1", (0, 2)), _chapter_map("Ch2", (3, 5))]
-        final     = _doc_map("Final.")
+        n          = 6
+        chunk_maps = [_chunk_map(f"Summary {i}") for i in range(n)]
+        chap_maps  = [_chapter_map("Ch1", (0, 2)), _chapter_map("Ch2", (3, 5))]
+        final      = _doc_map("Final.")
         stub = StubProvider({
             GlobalSkeleton: [sk],
-            DocumentMap:    doc_maps + [final],
+            ChunkMap:       chunk_maps,
+            DocumentMap:    [final],
             ChapterMap:     chap_maps,
         })
         agent = AnalystAgent(stub)
@@ -403,9 +414,9 @@ class TestTocBasedSkeleton:
     """
 
     def _make_stub_no_skeleton(self) -> StubProvider:
-        """Stub with DocumentMap responses only — GlobalSkeleton is NOT registered."""
-        doc = _doc_map()
-        return StubProvider({DocumentMap: [doc]})
+        """Stub with ChunkMap responses only — GlobalSkeleton is NOT registered."""
+        chunk = _chunk_map()
+        return StubProvider({ChunkMap: [chunk]})
 
     def _toc_items(self) -> list[dict]:
         return [
@@ -449,11 +460,11 @@ class TestTocBasedSkeleton:
 
     def test_empty_toc_items_falls_back_to_llm(self):
         """Empty toc_items must trigger the LLM path (GlobalSkeleton called)."""
-        sk   = _skeleton()
-        doc  = _doc_map()
+        sk    = _skeleton()
+        chunk = _chunk_map()
         stub = StubProvider({
             GlobalSkeleton: [sk],
-            DocumentMap:    [doc],
+            ChunkMap:       [chunk],
         })
         agent = AnalystAgent(stub)
         _run(agent.run({
@@ -465,11 +476,11 @@ class TestTocBasedSkeleton:
 
     def test_missing_toc_key_falls_back_to_llm(self):
         """toc_items key absent from dict → LLM fallback still works."""
-        sk   = _skeleton()
-        doc  = _doc_map()
+        sk    = _skeleton()
+        chunk = _chunk_map()
         stub = StubProvider({
             GlobalSkeleton: [sk],
-            DocumentMap:    [doc],
+            ChunkMap:       [chunk],
         })
         agent = AnalystAgent(stub)
         _run(agent.run({

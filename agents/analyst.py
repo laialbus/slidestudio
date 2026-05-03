@@ -1,8 +1,10 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from string import Template
+from typing import Literal
 
 from schemas.chapter_map import ChapterMap
+from schemas.chunk_map import ChunkMap
 from schemas.document_map import DocumentMap
 from schemas.global_skeleton import GlobalSkeleton, SectionEntry
 
@@ -13,6 +15,7 @@ from agents.base import BaseAgent
 class AnalystResult:
     skeleton: GlobalSkeleton
     doc_map: DocumentMap
+    figure_purposes: list[dict[int, Literal["conceptual", "evidential"]]] = field(default_factory=list)
 
 
 class AnalystAgent(BaseAgent):
@@ -31,14 +34,25 @@ class AnalystAgent(BaseAgent):
             self._analyse_chunk(chunks[i], skeleton, index=i)
             for i in range(len(chunks))
         ]
-        partial_maps = list(await asyncio.gather(*tasks))
+        chunk_results: list[ChunkMap] = list(await asyncio.gather(*tasks))
+
+        # Extract per-chunk figure purposes before stripping the field for merge.
+        figure_purposes: list[dict[int, Literal["conceptual", "evidential"]]] = [
+            {int(k): v for k, v in cm.figure_purposes.items()}
+            for cm in chunk_results
+        ]
+
+        partial_maps = [
+            DocumentMap(**cm.model_dump(exclude={"figure_purposes"}))
+            for cm in chunk_results
+        ]
 
         if len(partial_maps) == 1:
             doc_map = partial_maps[0]
         else:
             doc_map = await self._merge(skeleton, partial_maps)
 
-        return AnalystResult(skeleton=skeleton, doc_map=doc_map)
+        return AnalystResult(skeleton=skeleton, doc_map=doc_map, figure_purposes=figure_purposes)
 
     # ──────────────────────────────────────────────
     # Pass 1 — build global skeleton
@@ -61,7 +75,7 @@ class AnalystAgent(BaseAgent):
 
     async def _analyse_chunk(
         self, chunk: str, skeleton: GlobalSkeleton, index: int
-    ) -> DocumentMap:
+    ) -> ChunkMap:
         trimmed = self._trim_skeleton(skeleton, index)
         raw = self._load_named_prompt("analyst_chunk")
         prompt = Template(raw).safe_substitute(
@@ -70,7 +84,7 @@ class AnalystAgent(BaseAgent):
             chunk_text=chunk,
         )
         system = f"You are analysing chunk {index + 1} of an academic document."
-        return await self._call(prompt, DocumentMap, system)
+        return await self._call(prompt, ChunkMap, system)
 
     def _trim_skeleton(
         self, skeleton: GlobalSkeleton, current_chunk_index: int
