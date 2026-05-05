@@ -50,4 +50,4 @@ Set PROVIDER and MODEL in config.py. Add your API key to .env (never commit it).
     - Current example: `Planner.run(scope=None)` — `None` means "full document mode", not "config value was forgotten".
 
 3. **Config Ownership**
-    - `cli.py` and `pipeline.py` are the only files that may import `config.py` directly. All other modules receive values through constructor parameters or function arguments.
+    - `cli.py`, `pipeline.py`, and `server.py` are the only files that may import `config.py` directly. All other modules receive values through constructor parameters or function arguments.

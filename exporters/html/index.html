@@ -313,6 +313,116 @@
 
     .hidden { display: none !important; }
 
+    .btn-header {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 11px;
+      font-family: 'Inter', sans-serif;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      padding: 6px 16px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-right: 24px;
+      border-radius: 2px;
+    }
+    .btn-header:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+
+    /* ── Upload View ────────────────── */
+    .upload-view { width: 100%; max-width: 800px; animation: fadeIn 0.8s ease; }
+
+    .upload-zone {
+      border: 1px dashed var(--border);
+      padding: 40px 32px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.3s ease, background 0.3s ease;
+      margin-bottom: 48px;
+    }
+    .upload-zone:hover,
+    .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+    }
+    .upload-label {
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+    .upload-browse {
+      color: var(--accent);
+      cursor: pointer;
+      text-underline-offset: 3px;
+      text-decoration: underline;
+      text-decoration-color: transparent;
+      transition: text-decoration-color 0.2s ease;
+    }
+    .upload-browse:hover { text-decoration-color: var(--accent); }
+
+    /* ── Generation Panel ───────────── */
+    .gen-panel {
+      border: 1px solid var(--border);
+      padding: 32px;
+      margin-bottom: 48px;
+      animation: fadeIn 0.4s ease;
+    }
+    .gen-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .gen-filename {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 18px;
+      color: var(--text);
+    }
+    .gen-reset {
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      cursor: pointer;
+      background: none;
+      border: none;
+      font-family: 'Inter', sans-serif;
+      transition: color 0.3s ease;
+    }
+    .gen-reset:hover { color: var(--text); }
+    .gen-stages { list-style: none; }
+    .gen-stage {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      transition: color 0.4s ease;
+    }
+    .gen-stage:last-child { border-bottom: none; }
+    .gen-stage.active { color: var(--text); }
+    .gen-stage.done   { color: var(--accent); }
+    .gen-stage-dot {
+      width: 16px;
+      text-align: center;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .gen-error {
+      margin-top: 16px;
+      font-family: 'Cormorant Garamond', serif;
+      font-style: italic;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
     /* Custom scrollbar for Mu feel */
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: var(--bg); }
@@ -323,18 +433,37 @@
 <body>
   <header>
     <nav class="breadcrumb" id="breadcrumb"></nav>
-    <button class="theme-toggle" id="theme-toggle" title="Toggle Theme">
-      <svg id="sun-icon" class="hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z" />
-      </svg>
-      <svg id="moon-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-      </svg>
-    </button>
+    <div style="display: flex; align-items: center;">
+      <button class="btn-header" id="btn-upload-nav">Upload</button>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle Theme">
+        <svg id="sun-icon" class="hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z" />
+        </svg>
+        <svg id="moon-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+        </svg>
+      </button>
+    </div>
   </header>
 
   <main>
     <p class="state-msg" id="msg">Awaiting clarity…</p>
+
+    <!-- Upload View -->
+    <div class="upload-view hidden" id="upload-view">
+      <div class="upload-zone" id="upload-zone">
+        <input type="file" id="file-input" accept=".pdf" hidden>
+        <p class="upload-label">Drop a PDF to generate slides, or <span class="upload-browse" id="upload-browse">browse</span></p>
+      </div>
+      <div class="gen-panel hidden" id="gen-panel">
+        <div class="gen-header">
+          <span class="gen-filename" id="gen-filename"></span>
+          <button class="gen-reset" id="gen-reset">Start over</button>
+        </div>
+        <ul class="gen-stages" id="gen-stages"></ul>
+        <p class="gen-error hidden" id="gen-error"></p>
+      </div>
+    </div>
 
     <!-- Library -->
     <div class="library hidden" id="library">
@@ -376,6 +505,16 @@
     let currentChapterTitle   = '';
     let fromToc               = false;
     let currentTocFile        = FILE;
+    let _pollTimer            = null;
+
+    const STAGE_LABELS = {
+      extract: 'Extracting text',
+      analyst: 'Analysing document',
+      planner: 'Planning slides',
+      writer:  'Writing slides',
+      review:  'Reviewing',
+      chapter: 'Generating chapters',
+    };
 
     /* ─── Theme Management ────────────────────── */
     function initTheme() {
@@ -401,7 +540,7 @@
 
     /* ─── Utilities ──────────────────────────── */
     function hideAll() {
-      ['msg', 'library', 'toc', 'reel'].forEach(id => $(id).classList.add('hidden'));
+      ['msg', 'library', 'toc', 'reel', 'upload-view'].forEach(id => $(id).classList.add('hidden'));
       $('btn-back').classList.add('hidden');
     }
 
@@ -659,9 +798,168 @@
       if (e.key === 'ArrowRight') goTo(idx + 1);
     });
 
+    /* ─── Upload & Generation ───────────────── */
+    function initUpload() {
+      const zone   = $('upload-zone');
+      const input  = $('file-input');
+      const browse = $('upload-browse');
+      const navBtn = $('btn-upload-nav');
+
+      navBtn.addEventListener('click', showUploadView);
+
+      browse.addEventListener('click', e => { e.stopPropagation(); input.click(); });
+      zone.addEventListener('click', () => input.click());
+      input.addEventListener('change', () => {
+        if (input.files[0]) uploadFile(input.files[0]);
+      });
+      zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+      zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+      zone.addEventListener('drop', e => {
+        e.preventDefault();
+        zone.classList.remove('drag-over');
+        const f = e.dataTransfer.files[0];
+        if (f && f.name.toLowerCase().endsWith('.pdf')) uploadFile(f);
+      });
+
+      $('gen-reset').addEventListener('click', resetUploadZone);
+    }
+
+    function showUploadView() {
+      hideAll();
+      $('upload-view').classList.remove('hidden');
+      showBreadcrumb([
+        { label: 'SlideStudio', onClick: goLibraryHome },
+        { label: 'New Slides', active: true }
+      ]);
+      // If a job is already polling, keep showing the panel
+      if (_pollTimer) {
+        $('upload-zone').classList.add('hidden');
+        $('gen-panel').classList.remove('hidden');
+      } else {
+        $('upload-zone').classList.remove('hidden');
+        $('gen-panel').classList.add('hidden');
+      }
+    }
+
+    async function uploadFile(file) {
+      showGenerating(file.name);
+      const fd = new FormData();
+      fd.append('file', file);
+      let jobId;
+      try {
+        const r = await fetch('/upload', { method: 'POST', body: fd });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.detail || 'Upload failed');
+        }
+        ({ job_id: jobId } = await r.json());
+      } catch (e) {
+        showGenError(e.message);
+        return;
+      }
+      pollJob(jobId);
+    }
+
+    function showGenerating(filename) {
+      $('upload-zone').classList.add('hidden');
+      $('gen-panel').classList.remove('hidden');
+      $('gen-filename').textContent = filename;
+      $('gen-error').classList.add('hidden');
+      renderStages({});
+    }
+
+    function renderStages(progress) {
+      const isMultiDeck = 'chapter' in progress;
+      const keys = isMultiDeck
+        ? ['extract', 'analyst', 'chapter']
+        : ['extract', 'analyst', 'planner', 'writer', 'review'];
+
+      const list = $('gen-stages');
+      list.innerHTML = '';
+      keys.forEach(key => {
+        const p    = progress[key];
+        const done = p ? p.completed >= p.total && p.total > 0 : false;
+        const active = key in progress && !done;
+
+        let label = STAGE_LABELS[key];
+        if (key === 'chapter' && p && p.total > 1) {
+          label += ' ' + p.completed + ' / ' + p.total;
+        }
+
+        const li = document.createElement('li');
+        li.className = 'gen-stage' + (done ? ' done' : active ? ' active' : '');
+        li.innerHTML =
+          '<span class="gen-stage-dot">' + (done ? '✓' : active ? '—' : '') + '</span>' +
+          '<span>' + label + '</span>';
+        list.appendChild(li);
+      });
+    }
+
+    function pollJob(jobId) {
+      _pollTimer = setInterval(async () => {
+        let data;
+        try {
+          const r = await fetch('/status/' + jobId);
+          if (!r.ok) return;
+          data = await r.json();
+        } catch (_) { return; }
+
+        renderStages(data.progress || {});
+
+        if (data.status === 'done') {
+          clearInterval(_pollTimer);
+          _pollTimer = null;
+          if (data.output_url) {
+            try {
+              const slideData = await load(data.output_url);
+              currentPaperTitle = slideData.title || '';
+              currentTocFile    = data.output_url;
+              fromToc = false;
+              // Refresh library in background so breadcrumb home is current
+              load('/outputs/library.json').then(entries => {
+                currentLibraryEntries = entries.sort(
+                  (a, b) => (a.title || '').localeCompare(b.title || '')
+                );
+              }).catch(() => {});
+              resetUploadZone();
+              if (slideData.type === 'multi_deck') {
+                hideAll();
+                showTOC(slideData);
+              } else {
+                hideAll();
+                showReel(slideData.slides, slideData.images || []);
+              }
+            } catch (e) {
+              showGenError('Could not load slides: ' + e.message);
+            }
+          } else {
+            resetUploadZone();
+            goLibraryHome();
+          }
+        } else if (data.status === 'error') {
+          clearInterval(_pollTimer);
+          _pollTimer = null;
+          showGenError(data.error || 'Generation failed.');
+        }
+      }, 2000);
+    }
+
+    function showGenError(msg) {
+      $('gen-error').textContent = msg;
+      $('gen-error').classList.remove('hidden');
+    }
+
+    function resetUploadZone() {
+      if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+      $('gen-panel').classList.add('hidden');
+      $('upload-zone').classList.remove('hidden');
+      $('file-input').value = '';
+    }
+
     /* ─── Bootstrap ──────────────────────────── */
     async function init() {
       initTheme();
+      initUpload();
       showBreadcrumb([{ label: 'SlideStudio', active: true }]);
       if (FILE) {
         try {

@@ -110,7 +110,7 @@ class TestRunSubcommand:
     def test_open_calls_serve_and_open_with_output_path(self):
         output_path = Path("outputs/test.json")
         with patch("cli.pipeline_run", AsyncMock(return_value=(MagicMock(), [], output_path))), \
-             patch("exporters.html_server.serve_and_open") as mock_serve:
+             patch("server.serve_and_open") as mock_serve:
             runner.invoke(app, ["run", "dummy.pdf", "--open"])
         mock_serve.assert_called_once()
         assert mock_serve.call_args[0][0] == output_path
@@ -125,7 +125,7 @@ class TestServeSubcommand:
         output_file = tmp_path / "test.json"
         output_file.write_text("{}", encoding="utf-8")
         with patch("cli.resolve_output_path", return_value=output_file), \
-             patch("exporters.html_server.serve_and_open") as mock_serve:
+             patch("server.serve_and_open") as mock_serve:
             result = runner.invoke(app, ["serve", "paper.pdf"])
         assert result.exit_code == 0
         mock_serve.assert_called_once()
@@ -134,7 +134,7 @@ class TestServeSubcommand:
         output_file = tmp_path / "test.json"
         output_file.write_text("{}", encoding="utf-8")
         with patch("cli.resolve_output_path", return_value=output_file), \
-             patch("exporters.html_server.serve_and_open") as mock_serve:
+             patch("server.serve_and_open") as mock_serve:
             runner.invoke(app, ["serve", "paper.pdf"])
         assert mock_serve.call_args[0][0] == output_file
 
@@ -154,7 +154,7 @@ class TestServeSubcommand:
         assert "run" in result.output
 
     def test_serve_without_pdf_opens_library(self):
-        with patch("exporters.html_server.serve_and_open") as mock_serve:
+        with patch("server.serve_and_open") as mock_serve:
             result = runner.invoke(app, ["serve"])
         assert result.exit_code == 0
         mock_serve.assert_called_once()
@@ -162,7 +162,7 @@ class TestServeSubcommand:
 
     def test_serve_without_pdf_does_not_call_resolve_output_path(self):
         with patch("cli.resolve_output_path") as mock_resolve, \
-             patch("exporters.html_server.serve_and_open"):
+             patch("server.serve_and_open"):
             runner.invoke(app, ["serve"])
         mock_resolve.assert_not_called()
 
