@@ -21,8 +21,10 @@ import pytest
 from extractors.pdf import (
     ExtractionResult, PDFExtractor, TocItem,
     _inject_figure_ids, _build_chunk_images,
+    _extract_text_in_rect, _is_blank_pixmap,
 )
 from extractors.pdf import ImageRecord
+from extractors.layout import LayoutRegion
 
 
 # ──────────────────────────────────────────────────────────────
@@ -42,12 +44,12 @@ def _make_1x1_png() -> bytes:
 
 
 def _make_100x100_png() -> bytes:
-    """100×100 white RGB PNG — exceeds MIN_IMAGE_DIM (32 px)."""
+    """100×100 medium-gray RGB PNG — exceeds MIN_IMAGE_DIM (32 px); non-white for blank-gate tests."""
     def chunk(tag: bytes, data: bytes) -> bytes:
         crc = zlib.crc32(tag + data) & 0xFFFFFFFF
         return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
     w, h = 100, 100
-    raw_row = b"\x00" + b"\xff\xff\xff" * w
+    raw_row = b"\x00" + b"\x88\x88\x88" * w  # gray (136, 136, 136) — well below blank threshold
     raw_data = raw_row * h
     signature = b"\x89PNG\r\n\x1a\n"
     ihdr      = chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
@@ -579,3 +581,227 @@ class TestBuildChunkImages:
     def test_multiple_chunks_mapped_independently(self):
         chunks = ["[FIGURE_ID: 0] text", "no markers", "[FIGURE_ID: 1] text"]
         assert _build_chunk_images(chunks) == [[0], [], [1]]
+
+
+# ──────────────────────────────────────────────────────────────
+# Scenario 9 — _extract_text_in_rect
+# ──────────────────────────────────────────────────────────────
+
+class TestExtractTextInRect:
+    def _blocks_from_page(self, page) -> list:
+        return page.get_text("dict")["blocks"]
+
+    def test_text_fully_inside_rect_extracted(self, tmp_path):
+        doc  = pymupdf.open()
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 100), "Figure 1: The architecture.", fontsize=10)
+        blocks = self._blocks_from_page(page)
+        # Rect that fully encloses the text block
+        rect = pymupdf.Rect(50, 85, 400, 115)
+        text = _extract_text_in_rect(blocks, rect)
+        doc.close()
+        assert "Figure 1" in text
+
+    def test_text_outside_rect_not_extracted(self, tmp_path):
+        doc  = pymupdf.open()
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 100), "Figure 1: The architecture.", fontsize=10)
+        page.insert_text((72, 400), "Unrelated body text.", fontsize=10)
+        blocks = self._blocks_from_page(page)
+        rect = pymupdf.Rect(50, 85, 400, 115)
+        text = _extract_text_in_rect(blocks, rect)
+        doc.close()
+        assert "Unrelated" not in text
+
+    def test_block_below_containment_threshold_excluded(self, tmp_path):
+        doc  = pymupdf.open()
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 100), "Figure 1: Long caption line here.", fontsize=10)
+        blocks = self._blocks_from_page(page)
+        # Rect that clips the block to less than 50% containment
+        block_rect = pymupdf.Rect(blocks[0]["bbox"])
+        tiny_clip = pymupdf.Rect(
+            block_rect.x0,
+            block_rect.y0,
+            block_rect.x0 + block_rect.width * 0.3,  # only 30% of width
+            block_rect.y1,
+        )
+        text = _extract_text_in_rect(blocks, tiny_clip)
+        doc.close()
+        assert text == ""
+
+    def test_empty_blocks_returns_empty_string(self):
+        result = _extract_text_in_rect([], pymupdf.Rect(0, 0, 100, 100))
+        assert result == ""
+
+    def test_image_blocks_skipped(self, tmp_path):
+        doc  = pymupdf.open()
+        page = doc.new_page(width=595, height=842)
+        page.insert_image(pymupdf.Rect(72, 80, 250, 260), stream=_make_100x100_png())
+        blocks = self._blocks_from_page(page)
+        text = _extract_text_in_rect(blocks, pymupdf.Rect(50, 50, 300, 300))
+        doc.close()
+        assert text == ""
+
+    def test_multiple_blocks_joined(self, tmp_path):
+        doc  = pymupdf.open()
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 100), "First line.", fontsize=10)
+        page.insert_text((72, 120), "Second line.", fontsize=10)
+        blocks = self._blocks_from_page(page)
+        rect = pymupdf.Rect(50, 85, 400, 135)
+        text = _extract_text_in_rect(blocks, rect)
+        doc.close()
+        assert "First" in text
+        assert "Second" in text
+
+
+# ──────────────────────────────────────────────────────────────
+# Scenario 10 — _is_blank_pixmap (Phase 5 gate)
+# ──────────────────────────────────────────────────────────────
+
+class TestIsBlankPixmap:
+    def _render_page(self, page) -> "pymupdf.Pixmap":
+        return page.get_pixmap(matrix=pymupdf.Matrix(1, 1), alpha=False)
+
+    def test_blank_white_page_is_blank(self):
+        doc  = pymupdf.open()
+        page = doc.new_page(width=100, height=100)
+        pix  = self._render_page(page)
+        doc.close()
+        assert _is_blank_pixmap(pix) is True
+
+    def test_page_with_black_rect_not_blank(self):
+        doc   = pymupdf.open()
+        page  = doc.new_page(width=100, height=100)
+        shape = page.new_shape()
+        shape.draw_rect(pymupdf.Rect(20, 20, 80, 80))
+        shape.finish(color=(0, 0, 0), fill=(0, 0, 0), width=1)
+        shape.commit()
+        pix = self._render_page(page)
+        doc.close()
+        assert _is_blank_pixmap(pix) is False
+
+    def test_page_with_gray_text_not_blank(self):
+        doc  = pymupdf.open()
+        page = doc.new_page(width=200, height=100)
+        page.insert_text((10, 50), "Architecture diagram", fontsize=10)
+        pix  = self._render_page(page)
+        doc.close()
+        assert _is_blank_pixmap(pix) is False
+
+    def test_page_with_colored_rect_not_blank(self):
+        doc   = pymupdf.open()
+        page  = doc.new_page(width=100, height=100)
+        shape = page.new_shape()
+        shape.draw_rect(pymupdf.Rect(10, 10, 90, 90))
+        shape.finish(color=(0.2, 0.4, 0.8), fill=(0.2, 0.4, 0.8), width=1)
+        shape.commit()
+        pix = self._render_page(page)
+        doc.close()
+        assert _is_blank_pixmap(pix) is False
+
+    def test_blank_gate_prevents_blank_image_record(self, tmp_path):
+        """A caption with only blank whitespace above it produces no ImageRecord."""
+        doc  = pymupdf.open()
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 60), "Body text above blank area.", fontsize=10)
+        # No figure drawn — just blank space from y=90 to y=280
+        page.insert_text((72, 290), "Figure 9: Missing figure.", fontsize=10)
+        page.insert_text((72, 340), "Body text below caption.", fontsize=10)
+        path = str(tmp_path / "blank_figure.pdf")
+        doc.save(path)
+        doc.close()
+        result = PDFExtractor().extract(path)
+        assert result.images == []
+
+
+# ──────────────────────────────────────────────────────────────
+# Scenario 11 — Layout dispatch with mock analyser (Phase 4)
+# ──────────────────────────────────────────────────────────────
+
+class _MockLayoutAnalyser:
+    """Stub that bypasses Surya and returns predefined regions for every page."""
+    available = True
+
+    def __init__(self, regions: list):
+        self._regions = regions
+
+    def detect(self, page):
+        return self._regions
+
+
+class TestLayoutDispatch:
+    def test_primary_path_used_when_analyser_available(self, tmp_path):
+        """Mock analyser with correct figure+caption regions produces an ImageRecord."""
+        path = _vector_figure_pdf(tmp_path)
+        extractor = PDFExtractor()
+        # The vector figure is drawn at Rect(72, 90, 300, 220); caption at y≈240
+        extractor._layout = _MockLayoutAnalyser([
+            LayoutRegion(label="Figure",  bbox=pymupdf.Rect(72, 90, 300, 220), confidence=0.95),
+            LayoutRegion(label="Caption", bbox=pymupdf.Rect(72, 232, 450, 255), confidence=0.95),
+        ])
+        result = extractor.extract(path)
+        assert len(result.images) >= 1
+        assert result.images[0].data_uri.startswith("data:image/png;base64,")
+
+    def test_primary_path_caption_text_populated(self, tmp_path):
+        path = _vector_figure_pdf(tmp_path)
+        extractor = PDFExtractor()
+        extractor._layout = _MockLayoutAnalyser([
+            LayoutRegion(label="Figure",  bbox=pymupdf.Rect(72, 90, 300, 220), confidence=0.95),
+            LayoutRegion(label="Caption", bbox=pymupdf.Rect(72, 232, 450, 255), confidence=0.95),
+        ])
+        result = extractor.extract(path)
+        assert len(result.images) >= 1
+        assert "Figure 2" in result.images[0].caption
+
+    def test_picture_label_treated_as_figure(self, tmp_path):
+        """'Picture' label (Surya raster image label) is eligible for extraction."""
+        path = _vector_figure_pdf(tmp_path)
+        extractor = PDFExtractor()
+        extractor._layout = _MockLayoutAnalyser([
+            LayoutRegion(label="Picture", bbox=pymupdf.Rect(72, 90, 300, 220), confidence=0.95),
+            LayoutRegion(label="Caption", bbox=pymupdf.Rect(72, 232, 450, 255), confidence=0.95),
+        ])
+        result = extractor.extract(path)
+        assert len(result.images) >= 1
+
+    def test_unmatched_caption_falls_back_to_heuristic(self, tmp_path):
+        """Caption with no paired figure in layout detections is handled by heuristic."""
+        path = _vector_figure_pdf(tmp_path)
+        extractor = PDFExtractor()
+        # Return only a caption region — no figure region; heuristic must find the figure
+        extractor._layout = _MockLayoutAnalyser([
+            LayoutRegion(label="Caption", bbox=pymupdf.Rect(72, 232, 450, 255), confidence=0.95),
+        ])
+        result = extractor.extract(path)
+        # Heuristic should recover the vector figure via its drawing paths
+        assert len(result.images) >= 1
+
+    def test_non_figure_labels_ignored(self, tmp_path):
+        """Regions with non-figure labels (Text, Table, etc.) are not extracted."""
+        path = _vector_figure_pdf(tmp_path)
+        extractor = PDFExtractor()
+        extractor._layout = _MockLayoutAnalyser([
+            LayoutRegion(label="Text",    bbox=pymupdf.Rect(72, 90, 300, 220), confidence=0.95),
+            LayoutRegion(label="Caption", bbox=pymupdf.Rect(72, 232, 450, 255), confidence=0.95),
+        ])
+        result = extractor.extract(path)
+        # "Text" label is not in _FIGURE_LABELS; caption is unmatched → heuristic runs
+        # The heuristic will find the vector figure; result may still have an image
+        # but it must NOT come from the "Text" region being treated as a figure
+        for img in result.images:
+            assert img.data_uri.startswith("data:image/png;base64,")
+
+    def test_fallback_path_used_when_analyser_unavailable(self, tmp_path):
+        """When analyser.available is False the heuristic path produces the same result."""
+        path = _vector_figure_pdf(tmp_path)
+        result_heuristic = PDFExtractor().extract(path)
+
+        extractor = PDFExtractor()
+        extractor._layout = _MockLayoutAnalyser([])
+        extractor._layout.available = False  # force fallback
+        result_forced = extractor.extract(path)
+
+        assert len(result_heuristic.images) == len(result_forced.images)

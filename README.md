@@ -17,8 +17,10 @@ cd slidestudio
 
 ### 2. Create a virtual environment
 
+Python 3.12 is required — ML dependencies (Surya, PyTorch) do not yet ship pre-built wheels for Python 3.13+.
+
 ```bash
-python -m venv venv
+python3.12 -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 ```
 

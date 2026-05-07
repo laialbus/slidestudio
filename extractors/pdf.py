@@ -8,6 +8,13 @@ import pymupdf4llm.helpers.document_layout as _dl
 import pymupdf4llm.helpers.pymupdf_rag as _rag
 from pydantic import BaseModel
 
+from extractors.layout import (
+    LayoutAnalyser,
+    _CAPTION_LABELS,
+    _FIGURE_LABELS,
+    _pair_figures_captions,
+)
+
 # Sub-chunk limits: used when a heading-boundary section exceeds the limit
 # or when no headings are found (character-overlap fallback).
 _CHUNK_CHAR_LIMIT = 8_000
@@ -23,6 +30,8 @@ _DRAWING_OVERLAP_FRAC  = 0.4              # drawings must x-overlap caption by t
 _RENDER_DPI            = 200
 _RENDER_DPI_FALLBACK   = 100
 _MIN_FIGURE_HEIGHT     = 20.0         # pt — discard rects too short to be a real figure
+_BLANK_MIN_CHANNEL_VALUE = 250        # pixels below this value in any channel count as content
+_TEXT_CONTAINMENT_FRAC   = 0.5        # min fraction of block area inside rect to include its text
 
 # Caption pattern — anchored to the start of a text block
 _CAPTION_RE = re.compile(r"^(fig\.?|figure|chart|table)\b", re.IGNORECASE)
@@ -80,6 +89,7 @@ class PDFExtractor:
                  overlap_size: int = _OVERLAP_SIZE):
         self._chunk_size   = chunk_size
         self._overlap_size = overlap_size
+        self._layout       = LayoutAnalyser()
 
     def extract(self, file_path: str) -> ExtractionResult:
         doc = pymupdf.open(file_path)
@@ -121,7 +131,7 @@ class PDFExtractor:
             )
 
         # Extract images as base64 data URIs
-        images = _extract_images(doc)
+        images = _extract_images(doc, self._layout)
 
         pdf_title = _extract_pdf_title(doc)
         doc.close()
@@ -302,41 +312,117 @@ def _find_nearby_caption(lines: list[str], start: int, end: int) -> str:
 
 
 # ──────────────────────────────────────────────────────────────
-# Image extraction — caption-first approach
+# Image extraction
 # ──────────────────────────────────────────────────────────────
 
-def _extract_images(doc) -> list[ImageRecord]:
+def _extract_images(doc, analyser: LayoutAnalyser | None = None) -> list[ImageRecord]:
     """
-    Caption-first extraction: scan each page for Figure/Table captions,
-    infer the figure region (via vector drawing union or whitespace gap),
-    then render that region as a PNG pixmap.  Works for vector graphics,
-    raster images, and mixed figures without relying on xref matching.
+    Primary path (Surya available): run layout detection per page, pair
+    detected figure regions with detected caption regions by nearest-neighbour
+    matching, then render each figure region directly.  Captions the model
+    could not pair fall through to the caption-first heuristic below.
+
+    Fallback path (Surya unavailable or no detections): caption-first
+    heuristic — scan for Figure/Table captions, infer the figure region via
+    vector drawing union, raster block detection, or whitespace gap walk, then
+    render that region.
     """
     records: list[ImageRecord] = []
     idx = 0
 
     for page_num, page in enumerate(doc):
         blocks = page.get_text("dict")["blocks"]
-        body_size = _page_body_size(blocks)
-        captions = _scan_figure_captions(blocks, page_num)
 
-        for cap in captions:
-            figure_rect = _infer_figure_rect(page, blocks, cap, body_size)
-            if figure_rect is None or figure_rect.is_empty:
-                continue
-            raw = _render_figure(page, figure_rect)
-            if raw is None:
-                continue
-            b64 = base64.b64encode(raw).decode("ascii")
-            records.append(ImageRecord(
-                index=idx,
-                caption=cap["text"],
-                data_uri=f"data:image/png;base64,{b64}",
-                page=page_num + 1,
-            ))
-            idx += 1
+        if analyser is not None and analyser.available:
+            regions = analyser.detect(page)
+            figures  = [r for r in regions if r.label in _FIGURE_LABELS]
+            captions = [r for r in regions if r.label in _CAPTION_LABELS]
+
+            matched_pairs, unmatched_caps = _pair_figures_captions(figures, captions)
+
+            for fig_region, cap_region in matched_pairs:
+                caption_text = (
+                    _extract_text_in_rect(blocks, cap_region.bbox)
+                    if cap_region is not None else ""
+                )
+                raw = _render_figure(page, fig_region.bbox)
+                if raw is None:
+                    continue
+                b64 = base64.b64encode(raw).decode("ascii")
+                records.append(ImageRecord(
+                    index=idx,
+                    caption=caption_text,
+                    data_uri=f"data:image/png;base64,{b64}",
+                    page=page_num + 1,
+                ))
+                idx += 1
+
+            # Heuristic fallback for captions the model could not pair
+            if unmatched_caps:
+                body_size = _page_body_size(blocks)
+                for cap_region in unmatched_caps:
+                    caption_text = _extract_text_in_rect(blocks, cap_region.bbox)
+                    cap_dict = {
+                        "text":      caption_text,
+                        "full_bbox": cap_region.bbox,
+                        "page_num":  page_num,
+                    }
+                    figure_rect = _infer_figure_rect(page, blocks, cap_dict, body_size)
+                    if figure_rect is None or figure_rect.is_empty:
+                        continue
+                    raw = _render_figure(page, figure_rect)
+                    if raw is None:
+                        continue
+                    b64 = base64.b64encode(raw).decode("ascii")
+                    records.append(ImageRecord(
+                        index=idx,
+                        caption=caption_text,
+                        data_uri=f"data:image/png;base64,{b64}",
+                        page=page_num + 1,
+                    ))
+                    idx += 1
+        else:
+            # Surya unavailable: caption-first heuristic path (unchanged)
+            body_size = _page_body_size(blocks)
+            captions  = _scan_figure_captions(blocks, page_num)
+            for cap in captions:
+                figure_rect = _infer_figure_rect(page, blocks, cap, body_size)
+                if figure_rect is None or figure_rect.is_empty:
+                    continue
+                raw = _render_figure(page, figure_rect)
+                if raw is None:
+                    continue
+                b64 = base64.b64encode(raw).decode("ascii")
+                records.append(ImageRecord(
+                    index=idx,
+                    caption=cap["text"],
+                    data_uri=f"data:image/png;base64,{b64}",
+                    page=page_num + 1,
+                ))
+                idx += 1
 
     return records
+
+
+def _extract_text_in_rect(blocks: list, rect: pymupdf.Rect) -> str:
+    """
+    Collect and join text from type-0 blocks whose bounding box is contained
+    within rect by at least _TEXT_CONTAINMENT_FRAC of the block's own area.
+    """
+    parts: list[str] = []
+    for block in blocks:
+        if block["type"] != 0:
+            continue
+        br = pymupdf.Rect(block["bbox"])
+        intersection = br & rect
+        if intersection.is_empty:
+            continue
+        block_area = br.get_area()
+        if block_area > 0 and intersection.get_area() / block_area >= _TEXT_CONTAINMENT_FRAC:
+            text = _block_text(block)
+            if text:
+                parts.append(text)
+    return " ".join(parts).strip()
 
 
 # ── helpers ───────────────────────────────────────────────────
@@ -483,6 +569,8 @@ def _infer_figure_rect(
         and pymupdf.Rect(b["bbox"]).y1 <= min(page_rect.y1, full_bbox.y1 + _FIGURE_SEARCH_WINDOW)
         and _x_overlaps(pymupdf.Rect(b["bbox"]), full_bbox)
     ]
+
+    raster_candidate: pymupdf.Rect | None = None
     if above_img or below_img:
         if above_img and below_img:
             au, bu = _union(above_img), _union(below_img)
@@ -495,15 +583,17 @@ def _infer_figure_rect(
             best.x1 + _CAPTION_PADDING,
             best.y1 + _CAPTION_PADDING,
         )
-        result = padded & page_rect
-        if not result.is_empty and result.height >= _MIN_FIGURE_HEIGHT:
-            return result
+        candidate = padded & page_rect
+        if not candidate.is_empty and candidate.height >= _MIN_FIGURE_HEIGHT:
+            raster_candidate = candidate
 
-    # No qualifying drawings or images — try whitespace fallback on both sides and
-    # return whichever region is larger.
+    # Whitespace fallback on both sides, now column-aware (see _whitespace_fallback).
+    # Evaluate alongside raster and return the largest: a raster sub-element embedded
+    # inside a Form XObject figure would have a smaller area than the full-column
+    # whitespace estimate, so the correct region wins.
     above_rect = _whitespace_fallback(page, blocks, caption, body_size, "above")
     below_rect = _whitespace_fallback(page, blocks, caption, body_size, "below")
-    candidates = [r for r in (above_rect, below_rect) if r is not None]
+    candidates = [r for r in (raster_candidate, above_rect, below_rect) if r is not None]
     if not candidates:
         return None
     return max(candidates, key=lambda r: r.get_area())
@@ -544,6 +634,11 @@ def _whitespace_fallback(
             br = pymupdf.Rect(block["bbox"])
             if br.y1 > ref_y - 2:
                 continue
+            # Only consider text blocks in the caption's column — excludes
+            # body text from an adjacent column that would collapse best_edge
+            # to ref_y and produce an empty figure rect.
+            if min(br.x1, full_bbox.x1) - max(br.x0, full_bbox.x0) <= 0:
+                continue
             if _CAPTION_RE.match(_block_text(block)):
                 continue
             sz = max(
@@ -578,6 +673,8 @@ def _whitespace_fallback(
             br = pymupdf.Rect(block["bbox"])
             if br.y0 < ref_y + 2:
                 continue
+            if min(br.x1, full_bbox.x1) - max(br.x0, full_bbox.x0) <= 0:
+                continue
             if _CAPTION_RE.match(_block_text(block)):
                 continue
             sz = max(
@@ -606,12 +703,38 @@ def _whitespace_fallback(
     return figure_rect & page_rect
 
 
+def _is_blank_pixmap(pix: pymupdf.Pixmap) -> bool:
+    """
+    True when the pixmap contains no detectable content — all sampled pixels
+    have every channel at or above _BLANK_MIN_CHANNEL_VALUE (near-white).
+    Samples ~500 evenly-spaced pixels to keep cost O(1) regardless of size.
+    """
+    total_pixels = pix.width * pix.height
+    if total_pixels == 0:
+        return True
+    n = pix.n
+    samples = pix.samples
+    stride = max(1, total_pixels // 500) * n
+    for i in range(0, len(samples) - n + 1, stride):
+        for c in range(n):
+            if samples[i + c] < _BLANK_MIN_CHANNEL_VALUE:
+                return False
+    return True
+
+
 def _render_figure(page, figure_rect: pymupdf.Rect) -> bytes | None:
-    """Render a page region as a PNG at _RENDER_DPI, halving DPI once if over budget."""
+    """
+    Render a page region as a PNG at _RENDER_DPI, halving DPI once if over
+    budget.  Returns None if the rendered pixmap is blank (all near-white
+    pixels), which indicates the inferred region captured empty whitespace
+    rather than actual figure content.
+    """
     for dpi in (_RENDER_DPI, _RENDER_DPI_FALLBACK):
         try:
             mat = pymupdf.Matrix(dpi / 72, dpi / 72)
             pix = page.get_pixmap(clip=figure_rect, matrix=mat, alpha=False)
+            if _is_blank_pixmap(pix):
+                return None
             raw = pix.tobytes("png")
             if len(raw) <= _MAX_IMAGE_BYTES:
                 return raw
