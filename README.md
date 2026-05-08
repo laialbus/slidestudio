@@ -4,6 +4,8 @@ Turn any academic PDF into a polished, scrollable slide deck — locally, with y
 
 SlideStudio runs a multi-agent pipeline (Analyst → Planner → Writer → Critic/Refiner) that understands your document, designs a slide arc, drafts content, and self-reviews for accuracy. Short papers produce a single deck; long textbooks produce a chapter-per-deck index you can browse like a table of contents.
 
+> This codebase was written almost entirely by [Claude Sonnet 4.6](https://www.anthropic.com/claude), with a small number of changes contributed by [Gemini 3](https://deepmind.google/technologies/gemini/).
+
 ---
 
 ## Setup
@@ -36,13 +38,29 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Open `.env` and add your key:
+Open `.env` and add the key for your chosen provider. The default provider is Google:
 
+```
+GOOGLE_API_KEY=AIza...
+```
+
+Other supported providers:
 ```
 ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
 ```
 
-### 5. Run on any PDF
+### 5. Start the web studio
+
+```bash
+python cli.py serve
+```
+
+This opens `http://localhost:7654` in your browser. From here you can upload PDFs, track generation progress, browse your library, and configure provider settings — no further command-line interaction needed.
+
+#### CLI alternative
+
+If you prefer the command line:
 
 ```bash
 python cli.py run path/to/your/paper.pdf --open
@@ -102,9 +120,15 @@ python cli.py estimate paper.pdf
 {'mode': 'single-deck', 'decks': 1, 'api_calls': 8, 'input_tokens': 12400, ...}
 ```
 
-### `serve` — open viewer for an existing output
+### `serve` — start the web studio
 
-Opens the browser viewer for a previously generated output without re-running the pipeline. Useful for re-inspecting results or sharing a deck after the fact.
+Starts the local FastAPI server and opens the browser. With no argument it opens the library home screen — you can upload PDFs and manage your library from there without using the command line.
+
+```bash
+python cli.py serve
+```
+
+Pass a PDF path to jump straight to that deck's viewer:
 
 ```bash
 python cli.py serve paper.pdf
@@ -165,40 +189,61 @@ Every `run` automatically upserts an entry into `outputs/library.json` — a fla
 
 ---
 
-## Changing the provider or model
+## Provider and model
 
-Edit `config.py`:
+The easiest way is the **Settings panel** — click the gear icon (top-right of the browser UI), pick a provider, and save. The server picks up the change on the next job without restarting.
+
+To configure manually, edit `config.py`:
 
 ```python
-PROVIDER = "anthropic"          # anthropic | openai | groq | ollama
+PROVIDER = "google"    # anthropic | openai | google | google-fast | ollama
 
 MODELS = {
-    "anthropic": "claude-sonnet-4-20250514",
-    "openai":    "gpt-4o",
-    ...
+    "anthropic":   "claude-sonnet-4-20250514",
+    "openai":      "gpt-4o",
+    "google":      "gemini-3-flash-preview",
+    "google-fast": "gemma-4-31b-it",
+    "ollama":      "llama3.1",
 }
 ```
 
-Add the corresponding key to `.env`:
+Alternatively, create a `settings.json` in the project root (the web UI writes this automatically):
+
+```json
+{
+  "PROVIDER": "anthropic",
+  "MODELS": {
+    "anthropic": "claude-sonnet-4-20250514"
+  }
+}
+```
+
+`settings.json` overrides `config.py` without modifying it. Delete it to revert to `config.py` defaults. Add the key for the chosen provider to `.env`:
 
 ```
+ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
-GROQ_API_KEY=gsk_...
+GOOGLE_API_KEY=AIza...
 ```
 
 ---
 
 ## Library viewer
 
-The `--open` flag (or `serve`) starts a local HTTP server and opens `exporters/html/index.html` in your browser. The viewer is a single-page app with three states:
+The `--open` flag (or `serve`) starts a local FastAPI server and opens `exporters/html/index.html` in your browser. The viewer is a single-page app with four states:
 
 | State | What you see |
 |-------|-------------|
-| **Library** | Card grid of every generated deck, sorted newest-first. Shows title, type chip (Single / Multi-deck), date, slide count, and model. Includes a live search bar. |
+| **Library** | Card grid of every generated deck, sorted newest-first. Shows title, type chip (Single / Multi-deck), date, slide count, and model. Includes a live search bar and archive/restore actions. |
 | **TOC** | Chapter list for a multi-deck paper, or a direct jump to the reel for single-deck. Breadcrumb shows `Library › Paper Title`. |
 | **Reel** | Scrollable slide deck. Breadcrumb shows `Library › Paper Title › Chapter`. |
+| **Settings** | Gear icon (top-right) opens a panel to change the active provider and model, and toggle dark/light theme. |
 
 Click any breadcrumb segment to navigate back. The viewer also supports deep-linking via the `?file=` query parameter (used automatically by `serve`).
+
+### Upload via browser
+
+With the server running, use the upload button on the library home screen to submit a PDF. The server processes it in the background and the library updates automatically when the job completes — no CLI needed.
 
 ---
 

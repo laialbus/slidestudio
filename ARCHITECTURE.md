@@ -55,37 +55,40 @@ provider. No accounts, no telemetry, no hosted infrastructure.
 slidestudio/
 │
 ├── pipeline.py               # Orchestrator — runs agents in sequence
-├── cli.py                    # Entry point — argument parsing, progress display
+├── cli.py                    # CLI entry point — run, estimate, serve, library-refresh
+├── server.py                 # FastAPI server — upload, job status, library, settings API
 ├── config.py                 # Provider, model, and pipeline settings
+├── settings.json             # Optional user overrides (written by web UI, gitignored)
 │
 ├── agents/
-│   ├── __init__.py
-│   ├── base.py               # Shared Agent base class with retry logic
-│   ├── analyst.py            # Agent 1 — document understanding
+│   ├── base.py               # Shared Agent base class
+│   ├── analyst.py            # Agent 1 — document understanding (two-pass + Map-Reduce)
 │   ├── planner.py            # Agent 2 — slide arc design
-│   ├── writer.py             # Agent 3 — slide drafting
+│   ├── writer.py             # Agent 3 — slide drafting (batched)
 │   ├── critic.py             # Agent 4 — accuracy and clarity review
 │   └── refiner.py            # Agent 5 — final revision
 │
 ├── extractors/
-│   ├── __init__.py
-│   └── pdf.py                # PDF text extraction, header detection, overlap chunking, figure placeholders (PyMuPDF)
+│   └── pdf.py                # PDF extraction, dynamic header detection, overlap chunking,
+│                             #   figure/table placeholders, Surya layout analysis (PyMuPDF)
 │
 ├── providers/
-│   ├── __init__.py
-│   ├── base.py               # Shared LLM provider interface + Semaphore + tenacity backoff
+│   ├── base.py               # Shared LLM interface — Semaphore + circuit breaker + tenacity
+│   ├── config.py             # ProviderConfig dataclass (injected into provider instances)
+│   ├── errors.py             # CircuitOpenError, FatalAPIError
 │   ├── anthropic.py          # Anthropic SDK wrapper
 │   ├── openai.py             # OpenAI SDK wrapper
+│   ├── google.py             # Google Generative AI wrapper
 │   └── ollama.py             # Ollama local wrapper
 │
 ├── utils/
-│   ├── __init__.py
 │   ├── rate_limiter.py       # asyncio.Semaphore — provider-aware concurrency cap
 │   ├── cost_estimator.py     # Token counting and cost table for --estimate flag
-│   └── slugify.py            # Filesystem-safe string sanitiser for filenames and folders
+│   ├── slugify.py            # Filesystem-safe string sanitiser for filenames and folders
+│   ├── checkpoint.py         # Resumable runs — save/restore pipeline stage state
+│   └── library.py            # Rebuild and upsert entries in outputs/library.json
 │
 ├── schemas/
-│   ├── __init__.py
 │   ├── global_skeleton.py    # Pydantic model — Pass 1 skeleton (headers/TOC)
 │   ├── chapter_map.py        # Pydantic model — intermediate merge unit (Map-Reduce)
 │   ├── document_map.py       # Pydantic model — Analyst output
@@ -96,88 +99,61 @@ slidestudio/
 │   └── deck_index.py         # Pydantic model — multi-deck index (viewer TOC)
 │
 ├── outputs/                  # Generated slide sets land here
-│   ├── .gitkeep
+│   ├── library.json          # Auto-maintained index of all decks
+│   ├── archive/              # Archived decks (hidden from main library)
 │   ├── paper.json            # Single-deck output (short documents)
 │   └── biology-textbook/     # Multi-deck output (long documents)
-│       ├── index.json        # Table of contents for the viewer
+│       ├── index.json
 │       ├── 01_introduction.json
-│       ├── 02_cell_structure.json
-│       └── 03_respiration.json
+│       └── ...
 │
-├── tests/
-│   ├── __init__.py
+├── tests/                    # pytest suite (~530 tests)
 │   ├── test_extractor.py
-│   ├── test_analyst.py
-│   ├── test_planner.py
-│   ├── test_writer.py
-│   ├── test_critic.py
-│   ├── test_refiner.py
-│   ├── test_router.py        # Validates single-deck vs multi-deck routing decision
-│   ├── test_rate_limiter.py  # Confirms semaphore cap and tenacity backoff fire correctly
-│   ├── test_cost_estimator.py # Validates token counting and cost table output
-│   ├── test_slugify.py       # Validates sanitisation of OS-hostile characters
-│   └── test_retry_loop.py    # Validates kill switch behaviour
+│   ├── test_analyst.py  test_planner.py  test_writer.py
+│   ├── test_critic.py   test_refiner.py  test_pipeline.py
+│   ├── test_router.py        # single-deck vs multi-deck routing
+│   ├── test_rate_limiter.py  # semaphore cap and backoff behaviour
+│   ├── test_cost_estimator.py
+│   ├── test_slugify.py  test_filesystem_safety.py
+│   ├── test_retry_loop.py  test_resiliency.py  test_stress.py
+│   ├── test_checkpoint.py  test_library_manifest.py
+│   ├── test_multi_deck.py  test_schemas.py
+│   ├── test_cli.py  test_layout.py
+│   ├── test_archive_endpoints.py  test_settings_endpoints.py
+│   ├── test_config_settings.py
+│   ├── test_base_provider.py  test_anthropic_provider.py  test_google_provider.py
+│   └── ...
 │
 ├── prompts/                  # Prompt templates (separate from code)
-│   ├── analyst_skeleton.txt  # Pass 1 — extract headers/TOC into GlobalSkeleton
-│   ├── analyst_chunk.txt     # Pass 2 — analyse each chunk with skeleton injected
-│   ├── analyst_merge.txt     # Merge partial maps into final DocumentMap
-│   ├── planner.txt
-│   ├── writer.txt
-│   ├── critic.txt
-│   └── refiner.txt
+│   ├── analyst_skeleton.txt  analyst_chunk.txt  analyst_merge.txt
+│   ├── planner.txt  writer.txt  critic.txt  refiner.txt
 │
 ├── exporters/
-│   ├── __init__.py
 │   ├── base.py
-│   ├── html_server.py
 │   ├── pptx.py
 │   ├── gui.py
 │   └── html/
-│       └── index.html        # template owned by html_server.py
+│       └── index.html        # Single-page viewer app (library, reel, TOC, settings)
 │
 ├── .env.example              # API key template — never committed
-├── .gitignore
 ├── requirements.txt
+├── requirements-dev.txt
 ├── ARCHITECTURE.md
 ├── CLAUDE.md
 └── README.md
 ```
 
-**Key structural changes from the previous version:**
+**Key structural notes:**
 
-- `schemas/` now contains Pydantic model files (`.py`) instead of JSON schema
-  examples. These are the source of truth for validation.
-- `schemas/global_skeleton.py` is a new model for the two-pass skeleton output.
-- `schemas/chapter_map.py` is a new intermediate model used by the hierarchical
-  Map-Reduce merge — chunks merge into ChapterMaps, ChapterMaps merge into the
-  final DocumentMap.
-- `schemas/deck_index.py` is a new model for the multi-deck `index.json` TOC.
-- `schemas/slide_plan.py` — `PlannedSlide.chunk_indices` is bounded at
-  `max_length=3` to prevent unbounded context injection into the Writer.
-- `extractors/pdf.py` detects image and table blocks and injects structured
-  `[FIGURE EXCLUDED: ...]` and `[TABLE EXCLUDED: ...]` placeholders into chunk
-  text, so the Analyst is aware of visual content without needing a vision model.
-- `providers/base.py` wraps every API call with an `asyncio.Semaphore` and
-  `tenacity` exponential backoff — proactive throttling and reactive recovery.
-- `utils/rate_limiter.py` — the semaphore default is provider-aware: Ollama
-  defaults to `max_concurrent = 1` to prevent local GPU thrashing.
-- `utils/cost_estimator.py` powers the `--estimate` CLI flag.
-- `utils/slugify.py` — sanitises all dynamic strings (PDF titles, chapter
-  headings) before they touch the filesystem, preventing crashes from colons,
-  slashes, and other OS-forbidden characters.
-- `agents/writer.py` generates slides in fixed-size batches to stay within
-  model output token limits.
-- `pipeline.py` contains the router — the decision point that chooses between
-  single-deck and multi-deck orchestration after the Analyst completes.
-- `exporters/html_server.py` replaces the naive `open viewer/index.html` instruction.
-  `cli.py` reads the port from `PIPELINE["port"]` and passes it to
-  `serve_and_open()` as a parameter — `html_server.py` never imports `config.py`.
-- `tests/test_router.py` validates the routing threshold logic.
-- `tests/test_rate_limiter.py` validates the semaphore cap and backoff behaviour.
-- `tests/test_cost_estimator.py` validates token counting accuracy.
-- `tests/test_slugify.py` validates sanitisation across Windows-hostile strings.
-- `tests/test_retry_loop.py` validates the Critic/Refiner kill switch.
+- `server.py` is the FastAPI application. It exposes upload, job-status, library, archive/unarchive/delete, and GET/PUT settings endpoints, and serves `outputs/` and `exporters/html/` as static mounts. `cli.py` calls `server.serve_and_open()` for the `--open` and `serve` subcommands.
+- `config.py` loads `settings.json` from the project root if present, replacing `PROVIDER` and `MODELS` with the overrides. Malformed JSON or an unknown provider key causes an immediate `sys.exit` with a clear error message.
+- `providers/config.py` holds `ProviderConfig` — all provider tunables (timeouts, retry counts, backoff bounds, circuit-breaker thresholds) are injected rather than read from `config.py` inside the provider.
+- `providers/errors.py` defines `CircuitOpenError` and `FatalAPIError`, which the pipeline catches separately from transient errors.
+- `utils/checkpoint.py` enables `--resume`: each pipeline stage writes its output to `.checkpoints/` keyed by a hash of (PDF content + model + chunk size); a resumed run skips already-completed stages.
+- `utils/library.py` maintains `outputs/library.json` — every `run` upserts its entry; archive/unarchive calls trigger a rebuild.
+- `schemas/slide_plan.py` — `PlannedSlide.chunk_indices` is bounded at `max_length=3` to prevent unbounded context injection into the Writer.
+- `extractors/pdf.py` uses Surya for layout analysis when available, falling back to PyMuPDF heuristics for header detection.
+- `agents/writer.py` generates slides in fixed-size batches to stay within output token limits.
 
 ---
 
@@ -529,7 +505,7 @@ parallelisation. The complexity is contained entirely within the Analyst.
 
 ---
 
-## Improvement 3 — Local HTTP Server for the Viewer
+## Improvement 3 — FastAPI Server and Web Studio
 
 ### The problem
 
@@ -540,66 +516,34 @@ The viewer will silently fail to load any slides.
 
 ### The solution
 
-The `--open` flag in the CLI spins up Python's built-in `http.server` on a
-`localhost` port, serves the `outputs/` directory, and opens the browser to
-the correct URL. The server shuts itself down after the browser tab is opened,
-or can be left running if the user wants to refresh.
+`server.py` is a FastAPI application that serves the viewer over HTTP and exposes
+a full REST API. The `--open` flag and `serve` subcommand in the CLI call
+`server.serve_and_open()`, which starts uvicorn on `localhost:{PIPELINE["port"]}`
+and opens the browser.
 
-The port is not hardcoded in `html_server.py`. `cli.py` reads `PIPELINE["port"]`
-and passes it to `serve_and_open()` as an argument — `html_server.py` never
-imports `config.py` directly.
+**API endpoints:**
 
-```python
-# html_server.py
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/upload` | Accept a PDF, enqueue a background pipeline job |
+| `GET` | `/status/{job_id}` | Poll job progress and retrieve the output URL |
+| `GET` | `/library` | Return `outputs/library.json` |
+| `POST` | `/archive/{slug}` | Move a deck to `outputs/archive/` |
+| `POST` | `/unarchive/{slug}` | Restore a deck from the archive |
+| `DELETE` | `/archive/{slug}` | Permanently delete an archived deck |
+| `GET` | `/settings` | Return active `PROVIDER` and `MODELS` from `config` |
+| `PUT` | `/settings` | Write `settings.json` and hot-reload `config` |
 
-import http.server
-import threading
-import webbrowser
-import os
-from pathlib import Path
+**Static mounts:**
 
-def serve_and_open(output_file: str, port: int):
-    """
-    Serves the outputs/ directory on localhost and opens the viewer
-    pointing at the specified output file.
-    Runs the server in a background thread so the CLI remains responsive.
-    """
-    output_dir = Path("outputs").resolve()
-    viewer_path = Path("viewer/index.html").resolve()
+- `/outputs` → `outputs/` directory (slide JSON files)
+- `/exporters/html` → `exporters/html/` (viewer SPA, with HTML fallback)
 
-    class Handler(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, directory=str(output_dir), **kwargs)
-
-        def log_message(self, format, *args):
-            pass   # suppress server access logs in the terminal
-
-    server = http.server.HTTPServer(("localhost", port), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-
-    # Point the viewer at localhost rather than file://
-    filename = Path(output_file).name
-    url = f"http://localhost:{port}/{filename}"
-
-    # The viewer index.html reads the filename from the URL query string
-    viewer_url = f"http://localhost:{port}/../viewer/index.html?file={filename}"
-    webbrowser.open(viewer_url)
-
-    return server   # caller can call server.shutdown() when done
-```
-
-The `--open` flag behaviour in the CLI becomes:
-
-```bash
-python cli.py paper.pdf --open
-# → Generating slides...
-# → Serving outputs on http://localhost:7654
-# → Opening viewer in browser...
-```
-
-No external dependencies are added — `http.server` is part of Python's standard
-library.
+The server never imports or modifies `config.py` directly — the PUT `/settings`
+endpoint writes `settings.json` and calls `importlib.reload(config)`, so the next
+pipeline job picks up the new provider without a restart. The port is read from
+`config.PIPELINE["port"]` and passed in by the caller; `server.py` itself has no
+hard-coded configuration.
 
 ---
 
@@ -765,10 +709,10 @@ PDF File
     │  SlidesFinal (JSON written to outputs/)
     ▼
 ┌─────────────────────────────────────────────────────────┐
-│  Local HTTP Server + Viewer                             │
-│  html_server.py serves outputs/ on localhost.           │
-│  viewer/index.html loads the JSON via http://           │
-│  rather than file:// — no CORS issues.                  │
+│  Local FastAPI Server + Viewer                          │
+│  server.py serves outputs/ and exporters/html/ on       │
+│  localhost. index.html loads JSON via http:// —         │
+│  no CORS issues.                                        │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -998,7 +942,7 @@ Analyst — Merge (Map-Reduce)
     │                        │
     └──────────┬─────────────┘
                ▼
-    Local HTTP Server + Viewer
+    FastAPI Server + Viewer (server.py)
     Loads single JSON or index.json → TOC → chapter JSON
 ```
 
@@ -1792,26 +1736,39 @@ class BaseProvider:
 ```python
 # config.py
 
-PROVIDER = "anthropic"          # anthropic | openai | groq | ollama
+PROVIDER = "google"    # anthropic | openai | google | google-fast | ollama
 
 MODELS = {
-    "anthropic": "claude-sonnet-4-20250514",
-    "openai":    "gpt-4o",
-    "groq":      "llama-3.1-70b-versatile",
-    "ollama":    "llama3.1",
+    "anthropic":   "claude-sonnet-4-20250514",
+    "openai":      "gpt-4o",
+    "google":      "gemini-3-flash-preview",
+    "google-fast": "gemma-4-31b-it",
+    "ollama":      "llama3.1",
 }
 
 PIPELINE = {
-    "max_slides":           16,
-    "chunk_size":           8_000,   # target chunk size in characters (~2k tokens)
-    "overlap_size":         1_500,   # sliding window overlap between chunks (~300 words)
-    "multi_deck_threshold": 3,       # chapter count above which multi-deck mode activates
-    "max_concurrent":       None,    # None = use provider-aware default (5 for cloud, 1 for ollama)
-    "writer_batch_size":    5,       # slides per Writer API call — stays within output token limits
-    "max_format_retries":   3,       # per-agent JSON format retry limit
-    "max_review_cycles":    3,       # Critic/Refiner loop kill switch
-    "debug":                False,   # write intermediate outputs to disk
+    "max_slides":                    16,
+    "writer_batch_size":             5,
+    "chunk_size":                    8_000,
+    "overlap_size":                  1_500,
+    "multi_deck_chapter_threshold":  3,
+    "multi_deck_length_threshold":   100_000,
+    "max_concurrent":                None,
+    "max_format_retries":            3,
+    "max_review_cycles":             3,
+    "request_timeout":               600,
+    "max_rate_limit_retries":        6,
+    "backoff_wait_min":              4,
+    "backoff_wait_max":              60,
+    "circuit_breaker_threshold":     5,
+    "circuit_breaker_cooldown":      60,
+    "port":                          7654,
+    "debug":                         False,
 }
+
+# settings.json (project root, gitignored) is loaded here if present.
+# The web UI writes it; config.py applies it so all entry points stay in sync.
+# Malformed JSON or an unknown PROVIDER key causes sys.exit with a clear message.
 ```
 
 ---
@@ -1950,8 +1907,8 @@ SlideStudio — Agentic Slide Generator
 git clone https://github.com/yourname/slidestudio
 cd slidestudio
 
-# 2. Create a virtual environment
-python -m venv venv
+# 2. Create a virtual environment (Python 3.12 required)
+python3.12 -m venv venv
 source venv/bin/activate      # Windows: venv\Scripts\activate
 
 # 3. Install dependencies
@@ -1959,12 +1916,15 @@ pip install -r requirements.txt
 
 # 4. Configure your API key
 cp .env.example .env
-# Open .env and add your key:
-# ANTHROPIC_API_KEY=sk-ant-...
+# Open .env and add the key for your provider (default: Google):
+# GOOGLE_API_KEY=AIza...
 
 # 5. Run on any PDF
-python cli.py path/to/your/paper.pdf --open
+python cli.py run path/to/your/paper.pdf --open
 # → Slides generated and opened in browser automatically
+
+# Or start the web studio for browser-based uploads:
+python cli.py serve
 ```
 
 ---
@@ -1973,17 +1933,24 @@ python cli.py path/to/your/paper.pdf --open
 
 ```
 anthropic>=0.25.0
-openai>=1.0.0
+fastapi>=0.100.0
+google-genai>=1.0.0
 pymupdf>=1.24.0
+pymupdf4llm>=1.27.0
 pydantic>=2.0.0
-tenacity>=8.0.0
 python-dotenv>=1.0.0
+python-multipart>=0.0.7
 rich>=13.0.0
+surya-ocr>=0.17.0
+tenacity>=8.0.0
 typer>=0.12.0
+uvicorn[standard]>=0.20.0
 ```
 
-- `anthropic` / `openai` — provider SDKs
-- `pymupdf` — PDF extraction with dynamic font-size header detection
+- `anthropic` / `google-genai` — provider SDKs (OpenAI and Ollama use their own SDKs)
+- `fastapi` / `uvicorn` / `python-multipart` — web server and file upload
+- `pymupdf` / `pymupdf4llm` — PDF extraction with dynamic font-size header detection
+- `surya-ocr` — layout analysis for accurate figure and table detection
 - `pydantic` — schema validation and automatic retry on malformed LLM output
 - `tenacity` — exponential backoff retry on HTTP 429 rate limit responses
 - `python-dotenv` — loads `.env` file
@@ -2048,8 +2015,9 @@ renders the TOC page correctly.
 
 **Milestone 8 — CLI and viewer polished**
 `--estimate`, `--open`, `--fast`, `--debug`, and `--max-concurrent` all work.
-`html_server.py` serving confirmed in Chrome, Firefox, and Safari for both single
-JSON and index.json modes. A non-developer can follow the README successfully.
+FastAPI server confirmed in Chrome, Firefox, and Safari for both single JSON and
+index.json modes. Web studio upload flow works end to end. A non-developer can
+follow the README successfully.
 
 **Milestone 9 — Multi-provider support**
 OpenAI and Ollama providers implemented. Provider swap confirmed with one config
