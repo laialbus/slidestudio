@@ -29,6 +29,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 import config
 from agents.analyst import AnalystAgent
@@ -46,10 +47,16 @@ from utils.slugify import slugify
 
 load_dotenv()
 
-_PROJECT_ROOT = Path(__file__).parent.resolve()
-_PDFS_DIR     = _PROJECT_ROOT / "pdfs"
-_OUTPUTS_DIR  = _PROJECT_ROOT / "outputs"
-_ARCHIVE_DIR  = _OUTPUTS_DIR / "archive"
+_PROJECT_ROOT  = Path(__file__).parent.resolve()
+_PDFS_DIR      = _PROJECT_ROOT / "pdfs"
+_OUTPUTS_DIR   = _PROJECT_ROOT / "outputs"
+_ARCHIVE_DIR   = _OUTPUTS_DIR / "archive"
+_SETTINGS_PATH = _PROJECT_ROOT / "settings.json"
+
+
+class _SettingsPayload(BaseModel):
+    PROVIDER: str
+    MODELS: dict[str, str]
 
 
 # ── Job state ─────────────────────────────────────────────────────────────────
@@ -100,7 +107,7 @@ def _resolve_api_key(provider_key: str) -> str:
 
 
 def _build_agents(provider_key: str) -> dict:
-    provider_cls = _PROVIDER_REGISTRY.get(provider_key)
+    provider_cls = _PROVIDER_REGISTRY.get(provider_key) or _discover_provider_class(provider_key)
     if provider_cls is None:
         raise ValueError(f"Provider {provider_key!r} is not available")
     model_name = config.MODELS[provider_key]
@@ -152,6 +159,7 @@ async def _run_pipeline_job(job_id: str, pdf_path: Path) -> None:
     job = _jobs[job_id]
     job.status = "running"
 
+    importlib.reload(config)
     provider_key = config.PROVIDER
     model_name = config.MODELS[provider_key]
 
@@ -284,6 +292,28 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="Archived deck not found.")
         rebuild_library_manifest(_OUTPUTS_DIR)
         return {"status": "deleted"}
+
+    @app.get("/settings")
+    async def get_settings():
+        return {"PROVIDER": config.PROVIDER, "MODELS": config.MODELS}
+
+    @app.put("/settings")
+    async def put_settings(payload: _SettingsPayload):
+        if payload.PROVIDER not in payload.MODELS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"PROVIDER {payload.PROVIDER!r} must be a key in MODELS.",
+            )
+        _SETTINGS_PATH.write_text(
+            json.dumps(
+                {"PROVIDER": payload.PROVIDER, "MODELS": payload.MODELS},
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        importlib.reload(config)
+        return {"status": "saved"}
 
     # ── Static file mounts — registered after API routes ──────────────────
 

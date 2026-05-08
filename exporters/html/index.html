@@ -509,6 +509,101 @@
     ::-webkit-scrollbar-track { background: var(--bg); }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+    /* ── Settings Modal ─────────────────── */
+    .modal-settings { max-width: 520px; }
+    .modal-btn.active { border-color: var(--accent); color: var(--text); }
+
+    .settings-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-label {
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .settings-select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      padding: 5px 10px;
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.2s ease;
+    }
+    .settings-select:focus { border-color: var(--accent); }
+
+    .settings-section-label {
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 20px 0 12px;
+    }
+    .settings-model-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .settings-input {
+      flex: 1;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      padding: 6px 10px;
+      outline: none;
+      transition: border-color 0.2s ease;
+      min-width: 0;
+    }
+    .settings-input:focus { border-color: var(--accent); }
+    .settings-del-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      transition: color 0.2s ease;
+      flex-shrink: 0;
+    }
+    .settings-del-btn:hover:not(:disabled) { color: var(--text); }
+    .settings-del-btn:disabled { opacity: 0.2; cursor: default; }
+    .settings-add-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      cursor: pointer;
+      padding: 8px 0;
+      transition: color 0.2s ease;
+    }
+    .settings-add-btn:hover { color: var(--text); }
+    .settings-theme-btn {
+      padding: 6px 10px;
+      display: flex;
+      align-items: center;
+    }
+    .settings-theme-btn svg { width: 16px; height: 16px; stroke-width: 1.5; }
+    .settings-error {
+      font-size: 12px;
+      color: #c07070;
+      min-height: 18px;
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
@@ -522,12 +617,10 @@
         </svg>Archive
       </button>
       <button class="btn-header" id="btn-upload-nav">Upload</button>
-      <button class="theme-toggle" id="theme-toggle" title="Toggle Theme">
-        <svg id="sun-icon" class="hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z" />
-        </svg>
-        <svg id="moon-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+      <button class="theme-toggle" id="settings-btn" title="Settings">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
       </button>
     </div>
@@ -592,6 +685,45 @@
     </div>
   </main>
 
+  <!-- Settings Modal -->
+  <div class="modal-backdrop hidden" id="settings-modal">
+    <div class="modal modal-settings">
+      <p class="modal-title">Settings</p>
+
+      <div class="settings-row">
+        <span class="settings-label">Theme</span>
+        <div style="display:flex;gap:8px">
+          <button class="modal-btn settings-theme-btn" id="s-theme-dark" title="Dark">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+          </button>
+          <button class="modal-btn settings-theme-btn" id="s-theme-light" title="Light">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="settings-row">
+        <span class="settings-label">Provider</span>
+        <select id="s-provider" class="settings-select"></select>
+      </div>
+
+      <div class="settings-section-label">Models</div>
+      <div id="s-models-list"></div>
+      <button class="settings-add-btn" id="s-add-model">+ Add model</button>
+
+      <p class="settings-error" id="s-error"></p>
+
+      <div class="modal-actions">
+        <button class="modal-btn" id="s-cancel">Cancel</button>
+        <button class="modal-btn" id="s-save">Save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Collision Modal -->
   <div class="modal-backdrop hidden" id="collision-modal">
     <div class="modal">
@@ -629,24 +761,12 @@
 
     /* ─── Theme Management ────────────────────── */
     function initTheme() {
-      const saved = localStorage.getItem('theme') || 'dark';
-      setTheme(saved);
-      $('theme-toggle').addEventListener('click', () => {
-        const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-        setTheme(next);
-      });
+      setTheme(localStorage.getItem('theme') || 'dark');
     }
 
     function setTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
       localStorage.setItem('theme', theme);
-      if (theme === 'dark') {
-        $('sun-icon').classList.remove('hidden');
-        $('moon-icon').classList.add('hidden');
-      } else {
-        $('sun-icon').classList.add('hidden');
-        $('moon-icon').classList.remove('hidden');
-      }
     }
 
     /* ─── Utilities ──────────────────────────── */
@@ -1049,7 +1169,10 @@
       if (document.activeElement === $('archive-search')) return;
       if (e.key === 'ArrowLeft')  goTo(idx - 1);
       if (e.key === 'ArrowRight') goTo(idx + 1);
-      if (e.key === 'Escape') $('collision-modal').classList.add('hidden');
+      if (e.key === 'Escape') {
+        $('collision-modal').classList.add('hidden');
+        $('settings-modal').classList.add('hidden');
+      }
     });
 
     /* ─── Upload & Generation ───────────────── */
@@ -1205,9 +1328,143 @@
       $('file-input').value = '';
     }
 
+    /* ─── Settings Modal ─────────────────────── */
+    let _sModels   = [];   // [{key, value}]
+    let _sProvider = '';
+
+    async function openSettings() {
+      try {
+        const data = await load('/settings');
+        _sProvider = data.PROVIDER;
+        _sModels   = Object.entries(data.MODELS).map(([key, value]) => ({ key, value }));
+      } catch (_) {}
+      renderSettingsForm();
+      $('settings-modal').classList.remove('hidden');
+    }
+
+    function renderSettingsForm() {
+      const theme = document.documentElement.getAttribute('data-theme');
+      $('s-theme-dark').classList.toggle('active', theme === 'dark');
+      $('s-theme-light').classList.toggle('active', theme === 'light');
+      $('s-error').textContent = '';
+      renderProviderSelect();
+      renderModelsList();
+    }
+
+    function renderProviderSelect() {
+      const sel = $('s-provider');
+      // preserve whatever the user has already selected in the dropdown
+      const cur = sel.value || _sProvider;
+      sel.innerHTML = '';
+      _sModels.forEach(({ key }) => {
+        if (!key) return;
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = key;
+        opt.selected = key === cur;
+        sel.appendChild(opt);
+      });
+      // keep _sProvider in sync with the actual select value
+      _sProvider = sel.value;
+    }
+
+    function renderModelsList() {
+      const sel = $('s-provider');
+      const activeKey = sel.value || _sProvider;
+      const list = $('s-models-list');
+      list.innerHTML = '';
+      _sModels.forEach((row, i) => {
+        const div = document.createElement('div');
+        div.className = 'settings-model-row';
+
+        const keyIn = document.createElement('input');
+        keyIn.className = 'settings-input';
+        keyIn.value = row.key;
+        keyIn.placeholder = 'provider-name';
+        keyIn.addEventListener('input', e => {
+          _sModels[i].key = e.target.value;
+          renderProviderSelect();
+          // refresh only disabled states — re-rendering the whole list would lose focus
+          const activeKey = $('s-provider').value || _sProvider;
+          $('s-models-list').querySelectorAll('.settings-del-btn').forEach((btn, j) => {
+            btn.disabled = (_sModels[j] && _sModels[j].key === activeKey);
+          });
+        });
+
+        const valIn = document.createElement('input');
+        valIn.className = 'settings-input';
+        valIn.value = row.value;
+        valIn.placeholder = 'model-string';
+        valIn.addEventListener('input', e => { _sModels[i].value = e.target.value; });
+
+        const del = document.createElement('button');
+        del.className = 'settings-del-btn';
+        del.title = 'Remove';
+        del.disabled = (row.key === activeKey);
+        del.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="width:14px;height:14px;stroke-width:1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>';
+        del.addEventListener('click', () => {
+          _sModels.splice(i, 1);
+          renderProviderSelect();
+          renderModelsList();
+        });
+
+        div.appendChild(keyIn);
+        div.appendChild(valIn);
+        div.appendChild(del);
+        list.appendChild(div);
+      });
+    }
+
+    async function saveSettings() {
+      const provider = $('s-provider').value;
+      if (!provider) { $('s-error').textContent = 'Select a provider.'; return; }
+
+      const models = {};
+      for (const { key, value } of _sModels) {
+        const k = key.trim(), v = value.trim();
+        if (!k || !v) { $('s-error').textContent = 'All model rows must have a key and a value.'; return; }
+        models[k] = v;
+      }
+      if (!(provider in models)) { $('s-error').textContent = `Provider "${provider}" is not in the models list.`; return; }
+
+      try {
+        const r = await fetch('/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ PROVIDER: provider, MODELS: models }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          $('s-error').textContent = err.detail || 'Save failed.';
+          return;
+        }
+        $('settings-modal').classList.add('hidden');
+      } catch (e) {
+        $('s-error').textContent = 'Network error: ' + e.message;
+      }
+    }
+
+    function initSettings() {
+      $('settings-btn').addEventListener('click', openSettings);
+      $('s-cancel').addEventListener('click', () => $('settings-modal').classList.add('hidden'));
+      $('s-save').addEventListener('click', saveSettings);
+      $('s-theme-dark').addEventListener('click', () => { setTheme('dark');  renderSettingsForm(); });
+      $('s-theme-light').addEventListener('click', () => { setTheme('light'); renderSettingsForm(); });
+      $('s-provider').addEventListener('change', e => { _sProvider = e.target.value; renderModelsList(); });
+      $('s-add-model').addEventListener('click', () => {
+        _sModels.push({ key: '', value: '' });
+        renderModelsList();
+        renderProviderSelect();
+      });
+      $('settings-modal').addEventListener('click', e => {
+        if (e.target === $('settings-modal')) $('settings-modal').classList.add('hidden');
+      });
+    }
+
     /* ─── Bootstrap ──────────────────────────── */
     async function init() {
       initTheme();
+      initSettings();
       initUpload();
       showBreadcrumb([{ label: 'SlideStudio', active: true }]);
       if (FILE) {

@@ -45,3 +45,29 @@ PIPELINE = {
     # ── Debug ───────────────────────────────────────────────────────────────────
     "debug":                False,   # write intermediate agent outputs to disk
 }
+
+# ── Optional settings.json overrides ──────────────────────────────────────────
+# The web UI writes settings.json to the project root.  config.py applies those
+# overrides here so every entry point (server.py, cli.py) sees the same values.
+import json as _json
+import sys  as _sys
+from pathlib import Path as _Path
+
+_SETTINGS_PATH = _Path(__file__).parent / "settings.json"
+
+if _SETTINGS_PATH.exists():
+    try:
+        _overrides = _json.loads(_SETTINGS_PATH.read_text(encoding="utf-8"))
+    except _json.JSONDecodeError as _e:
+        _sys.exit(f"settings.json is malformed: {_e}")
+
+    if "PROVIDER" in _overrides:
+        PROVIDER = _overrides["PROVIDER"]
+    if "MODELS" in _overrides:
+        MODELS = _overrides["MODELS"]
+
+    if PROVIDER not in MODELS:
+        _sys.exit(
+            f"settings.json error: PROVIDER={PROVIDER!r} is not a key in MODELS. "
+            f"Available keys: {list(MODELS.keys())}"
+        )
