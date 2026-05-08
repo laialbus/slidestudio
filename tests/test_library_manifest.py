@@ -225,3 +225,94 @@ class TestRebuildLibraryManifest:
         _write_single_deck(debug_dir / "paper.json", "Debug Ghost")
         entries = rebuild_library_manifest(tmp_path)
         assert not any(e["title"] == "Debug Ghost" for e in entries)
+
+    def test_active_entry_has_archived_false(self, tmp_path):
+        _write_single_deck(tmp_path / "paper.json", "Paper")
+        entries = rebuild_library_manifest(tmp_path)
+        assert entries[0]["archived"] is False
+
+    def test_multi_deck_active_has_archived_false(self, tmp_path):
+        _write_multi_deck(tmp_path / "textbook", "Textbook")
+        entries = rebuild_library_manifest(tmp_path)
+        assert entries[0]["archived"] is False
+
+
+# ──────────────────────────────────────────────────────────────
+# rebuild_library_manifest — archive subdirectory
+# ──────────────────────────────────────────────────────────────
+
+class TestRebuildWithArchive:
+    def test_archived_single_deck_tagged(self, tmp_path):
+        archive = tmp_path / "archive"
+        archive.mkdir()
+        _write_single_deck(archive / "paper.json", "Old Paper")
+        entries = rebuild_library_manifest(tmp_path)
+        assert len(entries) == 1
+        assert entries[0]["title"] == "Old Paper"
+        assert entries[0]["archived"] is True
+
+    def test_archived_multi_deck_tagged(self, tmp_path):
+        archive = tmp_path / "archive"
+        archive.mkdir()
+        _write_multi_deck(archive / "textbook", "Old Textbook")
+        entries = rebuild_library_manifest(tmp_path)
+        assert len(entries) == 1
+        assert entries[0]["title"] == "Old Textbook"
+        assert entries[0]["archived"] is True
+
+    def test_active_and_archived_coexist(self, tmp_path):
+        archive = tmp_path / "archive"
+        archive.mkdir()
+        _write_single_deck(tmp_path / "new.json", "New Paper")
+        _write_single_deck(archive / "old.json", "Old Paper")
+        entries = rebuild_library_manifest(tmp_path)
+        assert len(entries) == 2
+        active   = next(e for e in entries if e["title"] == "New Paper")
+        archived = next(e for e in entries if e["title"] == "Old Paper")
+        assert active["archived"]   is False
+        assert archived["archived"] is True
+
+    def test_archived_chapter_files_skipped(self, tmp_path):
+        archive = tmp_path / "archive"
+        archive.mkdir()
+        _write_multi_deck(archive / "textbook", "Textbook", chapter_count=3)
+        entries = rebuild_library_manifest(tmp_path)
+        # Only the index should appear, not the chapter files
+        assert len(entries) == 1
+
+    def test_archived_slide_count_sums_correctly(self, tmp_path):
+        archive = tmp_path / "archive"
+        archive.mkdir()
+        _write_multi_deck(archive / "textbook", "Textbook", chapter_count=4)
+        entries = rebuild_library_manifest(tmp_path)
+        assert entries[0]["slide_count"] == 4
+
+    def test_archived_file_key_contains_archive_path(self, tmp_path):
+        archive = tmp_path / "archive"
+        archive.mkdir()
+        _write_single_deck(archive / "paper.json", "Paper")
+        entries = rebuild_library_manifest(tmp_path)
+        assert "archive" in entries[0]["file"]
+
+    def test_upsert_defaults_archived_to_false(self, tmp_path):
+        entry = {
+            "title": "Paper", "file": "outputs/paper.json",
+            "type": "single_deck", "generated_at": "2026-05-01T00:00:00+00:00",
+            "provider": "anthropic", "model": "claude-sonnet-4-6",
+            "slide_count": 5, "deck_count": 1,
+        }
+        upsert_library_manifest(tmp_path, entry)
+        data = json.loads((tmp_path / "library.json").read_text())
+        assert data[0]["archived"] is False
+
+    def test_upsert_preserves_explicit_archived_true(self, tmp_path):
+        entry = {
+            "title": "Paper", "file": "outputs/archive/paper.json",
+            "type": "single_deck", "generated_at": "2026-05-01T00:00:00+00:00",
+            "provider": "anthropic", "model": "claude-sonnet-4-6",
+            "slide_count": 5, "deck_count": 1,
+            "archived": True,
+        }
+        upsert_library_manifest(tmp_path, entry)
+        data = json.loads((tmp_path / "library.json").read_text())
+        assert data[0]["archived"] is True

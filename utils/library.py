@@ -9,6 +9,7 @@ def upsert_library_manifest(outputs_dir: Path, entry: dict) -> None:
         entries = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         entries = []
+    entry = {**entry, "archived": entry.get("archived", False)}
     entries = [e for e in entries if e.get("file") != entry["file"]]
     entries.append(entry)
     entries.sort(key=lambda e: e.get("generated_at", ""), reverse=True)
@@ -20,6 +21,7 @@ def upsert_library_manifest(outputs_dir: Path, entry: dict) -> None:
 def rebuild_library_manifest(outputs_dir: Path) -> list[dict]:
     """Scan outputs_dir and rebuild library.json from scratch."""
     outputs_dir = Path(outputs_dir)
+    archive_dir = outputs_dir / "archive"
     entries = []
 
     for json_path in sorted(outputs_dir.rglob("*.json")):
@@ -28,11 +30,13 @@ def rebuild_library_manifest(outputs_dir: Path) -> list[dict]:
 
         parent = json_path.parent
         if parent == outputs_dir:
-            # Top-level file — single_deck candidate
-            pass
+            archived = False
+        elif parent == archive_dir:
+            archived = True
         elif parent.parent == outputs_dir and json_path.name == "index.json":
-            # Multi-deck index one level deep
-            pass
+            archived = False
+        elif parent.parent == archive_dir and json_path.name == "index.json":
+            archived = True
         else:
             # Chapter file, debug output, or deeper nesting — skip
             continue
@@ -77,6 +81,7 @@ def rebuild_library_manifest(outputs_dir: Path) -> list[dict]:
             "model":        data.get("model", ""),
             "slide_count":  slide_count,
             "deck_count":   deck_count,
+            "archived":     archived,
         })
 
     entries.sort(key=lambda e: e.get("generated_at", ""), reverse=True)

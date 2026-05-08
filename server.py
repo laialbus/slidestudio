@@ -18,6 +18,7 @@ import importlib
 import inspect
 import json
 import os
+import shutil
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -40,6 +41,7 @@ from providers.base import BaseProvider
 from providers.config import ProviderConfig
 from providers.errors import CircuitOpenError, FatalAPIError
 from utils.checkpoint import Checkpoint
+from utils.library import rebuild_library_manifest
 from utils.slugify import slugify
 
 load_dotenv()
@@ -47,6 +49,7 @@ load_dotenv()
 _PROJECT_ROOT = Path(__file__).parent.resolve()
 _PDFS_DIR     = _PROJECT_ROOT / "pdfs"
 _OUTPUTS_DIR  = _PROJECT_ROOT / "outputs"
+_ARCHIVE_DIR  = _OUTPUTS_DIR / "archive"
 
 
 # ── Job state ─────────────────────────────────────────────────────────────────
@@ -197,6 +200,7 @@ def create_app() -> FastAPI:
     """
     _PDFS_DIR.mkdir(exist_ok=True)
     _OUTPUTS_DIR.mkdir(exist_ok=True)
+    _ARCHIVE_DIR.mkdir(exist_ok=True)
 
     app = FastAPI(title="SlideStudio", docs_url=None, redoc_url=None)
 
@@ -238,6 +242,48 @@ def create_app() -> FastAPI:
         if not manifest.exists():
             return JSONResponse([])
         return JSONResponse(json.loads(manifest.read_text(encoding="utf-8")))
+
+    @app.post("/archive/{slug}")
+    async def archive_deck(slug: str):
+        single = _OUTPUTS_DIR / f"{slug}.json"
+        multi  = _OUTPUTS_DIR / slug
+        if single.is_file():
+            shutil.move(str(single), str(_ARCHIVE_DIR / f"{slug}.json"))
+        elif multi.is_dir():
+            shutil.move(str(multi), str(_ARCHIVE_DIR / slug))
+        else:
+            raise HTTPException(status_code=404, detail="Deck not found.")
+        rebuild_library_manifest(_OUTPUTS_DIR)
+        return {"status": "archived"}
+
+    @app.post("/unarchive/{slug}")
+    async def unarchive_deck(slug: str):
+        single = _ARCHIVE_DIR / f"{slug}.json"
+        multi  = _ARCHIVE_DIR / slug
+        if single.is_file():
+            dest = _OUTPUTS_DIR / f"{slug}.json"
+        elif multi.is_dir():
+            dest = _OUTPUTS_DIR / slug
+        else:
+            raise HTTPException(status_code=404, detail="Archived deck not found.")
+        if dest.exists():
+            raise HTTPException(status_code=409, detail="A deck with this name already exists in the library.")
+        shutil.move(str(single if single.is_file() else multi), str(dest))
+        rebuild_library_manifest(_OUTPUTS_DIR)
+        return {"status": "restored"}
+
+    @app.delete("/archive/{slug}")
+    async def delete_archived_deck(slug: str):
+        single = _ARCHIVE_DIR / f"{slug}.json"
+        multi  = _ARCHIVE_DIR / slug
+        if single.is_file():
+            single.unlink()
+        elif multi.is_dir():
+            shutil.rmtree(str(multi))
+        else:
+            raise HTTPException(status_code=404, detail="Archived deck not found.")
+        rebuild_library_manifest(_OUTPUTS_DIR)
+        return {"status": "deleted"}
 
     # ── Static file mounts — registered after API routes ──────────────────
 

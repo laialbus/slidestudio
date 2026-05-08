@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SlideStudio</title>
-  
+
   <!-- Fonts: Refined Serif and Modern Sans -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,7 +18,7 @@
     };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" defer></script>
-  
+
   <style>
     /* ── Mu Aesthetic: Color Palettes ───────────────── */
     :root[data-theme="light"] {
@@ -146,7 +146,7 @@
     .toc-num   { font-size: 11px; font-weight: 500; color: var(--accent); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 12px; }
     .toc-label { font-size: 22px; font-family: 'Cormorant Garamond', serif; font-weight: 500; line-height: 1.3; color: var(--text); }
     .card-meta { font-size: 12px; color: var(--muted); margin-top: 12px; letter-spacing: 0.02em; }
-    
+
     .chip {
       display: inline-block;
       font-size: 9px;
@@ -159,6 +159,25 @@
       padding: 2px 8px;
       border-radius: 2px;
     }
+
+    /* ── Card action button (Archive / Restore) ── */
+    .card-action {
+      position: absolute;
+      top: 28px;
+      right: 0;
+      background: none;
+      border: none;
+      color: var(--muted);
+      opacity: 0;
+      cursor: pointer;
+      padding: 4px;
+      transition: opacity 0.2s ease, color 0.2s ease;
+      display: flex;
+      align-items: center;
+    }
+    .card-action svg { width: 15px; height: 15px; stroke-width: 1.5; }
+    .toc-card:hover .card-action { opacity: 1; }
+    .card-action:hover { color: var(--text) !important; }
 
     /* ── TOC View ───────────────────────── */
     .toc { width: 100%; max-width: 1100px; animation: fadeIn 0.8s ease; }
@@ -178,11 +197,11 @@
     }
 
     /* ── Slide Reel ─────────────────────── */
-    .reel { 
-      width: 100%; 
-      max-width: 1200px; 
-      display: flex; 
-      flex-direction: column; 
+    .reel {
+      width: 100%;
+      max-width: 1200px;
+      display: flex;
+      flex-direction: column;
       gap: 32px;
       animation: fadeIn 1s ease;
     }
@@ -270,9 +289,9 @@
     }
 
     /* ── Controls ───────────────────────── */
-    .controls { 
-      display: flex; 
-      align-items: center; 
+    .controls {
+      display: flex;
+      align-items: center;
       justify-content: center;
       gap: 48px;
       padding-top: 16px;
@@ -294,12 +313,12 @@
     }
     .btn:hover:not(:disabled) { color: var(--text); }
     .btn:disabled { opacity: 0.15; cursor: default; }
-    
+
     .btn-back-nav { position: absolute; left: 0; }
-    
-    .counter { 
-      font-size: 12px; 
-      color: var(--muted); 
+
+    .counter {
+      font-size: 12px;
+      color: var(--muted);
       font-family: 'Inter', sans-serif;
       letter-spacing: 0.1em;
       opacity: 0.6;
@@ -328,6 +347,10 @@
       border-radius: 2px;
     }
     .btn-header:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+    .btn-header.active {
       border-color: var(--accent);
       color: var(--text);
     }
@@ -423,6 +446,64 @@
       color: var(--muted);
     }
 
+    /* ── Modal ──────────────────────── */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn 0.2s ease;
+    }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 40px;
+      max-width: 440px;
+      width: calc(100% - 48px);
+    }
+    .modal-title {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 22px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+    .modal-body {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.7;
+      margin-bottom: 32px;
+    }
+    .modal-actions {
+      display: flex;
+      gap: 16px;
+      justify-content: flex-end;
+    }
+    .modal-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 11px;
+      font-family: 'Inter', sans-serif;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      padding: 8px 20px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border-radius: 2px;
+    }
+    .modal-btn:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+    .modal-btn-danger:hover {
+      border-color: #a05050;
+      color: #c07070;
+    }
+
     /* Custom scrollbar for Mu feel */
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: var(--bg); }
@@ -434,6 +515,12 @@
   <header>
     <nav class="breadcrumb" id="breadcrumb"></nav>
     <div style="display: flex; align-items: center;">
+      <button class="btn-header" id="btn-archive-nav" title="Archive">
+        <!-- box/archive icon -->
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="width:14px;height:14px;stroke-width:1.5;vertical-align:middle;margin-right:6px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-.375c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v.375c0 .621.504 1.125 1.125 1.125z" />
+        </svg>Archive
+      </button>
       <button class="btn-header" id="btn-upload-nav">Upload</button>
       <button class="theme-toggle" id="theme-toggle" title="Toggle Theme">
         <svg id="sun-icon" class="hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -469,10 +556,20 @@
     <div class="library hidden" id="library">
       <div class="library-top">
         <input type="search" class="library-search" id="library-search"
-               placeholder="Search archives…" autocomplete="off">
+               placeholder="Search…" autocomplete="off">
       </div>
       <div class="toc-grid" id="library-grid"></div>
       <p class="state-msg hidden" id="library-empty"></p>
+    </div>
+
+    <!-- Archive View -->
+    <div class="library hidden" id="archive-view">
+      <div class="library-top">
+        <input type="search" class="library-search" id="archive-search"
+               placeholder="Search archive…" autocomplete="off">
+      </div>
+      <div class="toc-grid" id="archive-grid"></div>
+      <p class="state-msg hidden" id="archive-empty"></p>
     </div>
 
     <!-- Table of Contents -->
@@ -495,17 +592,31 @@
     </div>
   </main>
 
+  <!-- Collision Modal -->
+  <div class="modal-backdrop hidden" id="collision-modal">
+    <div class="modal">
+      <p class="modal-title">Name conflict</p>
+      <p class="modal-body" id="collision-msg"></p>
+      <div class="modal-actions">
+        <button class="modal-btn" id="modal-abort">Abort</button>
+        <button class="modal-btn modal-btn-danger" id="modal-replace">Delete archive copy</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const $ = id => document.getElementById(id);
     const FILE = new URLSearchParams(location.search).get('file');
 
     let slides = [], deckImages = [], idx = 0;
-    let currentLibraryEntries = [];
-    let currentPaperTitle     = '';
-    let currentChapterTitle   = '';
-    let fromToc               = false;
-    let currentTocFile        = FILE;
-    let _pollTimer            = null;
+    let allEntries             = [];
+    let currentLibraryEntries  = [];
+    let currentArchivedEntries = [];
+    let currentPaperTitle      = '';
+    let currentChapterTitle    = '';
+    let fromToc                = false;
+    let currentTocFile         = FILE;
+    let _pollTimer             = null;
 
     const STAGE_LABELS = {
       extract: 'Extracting text',
@@ -540,8 +651,10 @@
 
     /* ─── Utilities ──────────────────────────── */
     function hideAll() {
-      ['msg', 'library', 'toc', 'reel', 'upload-view'].forEach(id => $(id).classList.add('hidden'));
+      ['msg', 'library', 'archive-view', 'toc', 'reel', 'upload-view'].forEach(id => $(id).classList.add('hidden'));
       $('btn-back').classList.add('hidden');
+      $('btn-archive-nav').classList.remove('active');
+      $('btn-upload-nav').classList.remove('active');
     }
 
     async function load(url) {
@@ -554,6 +667,14 @@
       return String(s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;')
         .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function slugFromEntry(e) {
+      const parts = e.file.split('/').filter(Boolean);
+      if (e.type === 'multi_deck') {
+        return parts[parts.length - 2];
+      }
+      return parts[parts.length - 1].replace(/\.json$/, '');
     }
 
     /* ─── Breadcrumb ─────────────────────────── */
@@ -579,10 +700,21 @@
       });
     }
 
+    /* ─── Data refresh ───────────────────────── */
+    async function refreshLibrary() {
+      try {
+        allEntries = await load('/library');
+      } catch (_) {
+        allEntries = [];
+      }
+      const alpha = (a, b) => (a.title || '').localeCompare(b.title || '');
+      currentLibraryEntries  = allEntries.filter(e => !e.archived).sort(alpha);
+      currentArchivedEntries = allEntries.filter(e => e.archived).sort(alpha);
+    }
+
     /* ─── Library ────────────────────────────── */
     function showLibrary(entries) {
       hideAll();
-      currentLibraryEntries = entries;
       $('library').classList.remove('hidden');
       showBreadcrumb([{ label: 'SlideStudio', active: true }]);
       $('library-search').value = '';
@@ -602,14 +734,21 @@
       }
       empty.classList.add('hidden');
       entries.forEach(e => {
-        const card       = document.createElement('div');
-        card.className   = 'toc-card';
-        const chipLabel  = e.type === 'multi_deck' ? 'Series' : 'Single';
-        const meta       = buildMeta(e);
-        card.innerHTML   =
+        const card = document.createElement('div');
+        card.className = 'toc-card';
+        const chipLabel = e.type === 'multi_deck' ? 'Series' : 'Single';
+        const meta = buildMeta(e);
+        card.innerHTML =
           '<div class="chip">' + chipLabel + '</div>' +
+          '<button class="card-action" title="Move to archive" aria-label="Archive">' +
+            '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-.375c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v.375c0 .621.504 1.125 1.125 1.125z" /></svg>' +
+          '</button>' +
           '<div class="toc-label">'  + esc(e.title) + '</div>' +
           (meta ? '<div class="card-meta">' + esc(meta) + '</div>' : '');
+        card.querySelector('.card-action').addEventListener('click', ev => {
+          ev.stopPropagation();
+          archiveDeck(e);
+        });
         card.addEventListener('click', () => loadFromLibrary(e));
         grid.appendChild(card);
       });
@@ -653,14 +792,124 @@
     }
 
     async function goLibraryHome() {
-      try {
-        currentLibraryEntries = await load('/outputs/library.json');
-        currentLibraryEntries.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-      } catch (_) {
-        currentLibraryEntries = [];
-      }
+      await refreshLibrary();
       fromToc = false;
       showLibrary(currentLibraryEntries);
+    }
+
+    /* ─── Archive ────────────────────────────── */
+    function showArchiveView(entries) {
+      hideAll();
+      $('archive-view').classList.remove('hidden');
+      $('btn-archive-nav').classList.add('active');
+      showBreadcrumb([
+        { label: 'SlideStudio', onClick: goLibraryHome },
+        { label: 'Archive', active: true },
+      ]);
+      $('archive-search').value = '';
+      renderArchiveCards(entries);
+    }
+
+    function renderArchiveCards(entries) {
+      const grid  = $('archive-grid');
+      const empty = $('archive-empty');
+      grid.innerHTML = '';
+      if (entries.length === 0) {
+        empty.textContent = currentArchivedEntries.length === 0
+          ? 'The archive is empty.'
+          : 'Nothing matches your search.';
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+      entries.forEach(e => {
+        const card = document.createElement('div');
+        card.className = 'toc-card';
+        const chipLabel = e.type === 'multi_deck' ? 'Series' : 'Single';
+        const meta = buildMeta(e);
+        card.innerHTML =
+          '<div class="chip">' + chipLabel + '</div>' +
+          '<button class="card-action" title="Restore to library" aria-label="Restore" style="color:var(--accent)">' +
+            '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>' +
+          '</button>' +
+          '<div class="toc-label">'  + esc(e.title) + '</div>' +
+          (meta ? '<div class="card-meta">' + esc(meta) + '</div>' : '');
+        card.querySelector('.card-action').addEventListener('click', ev => {
+          ev.stopPropagation();
+          restoreDeck(e);
+        });
+        card.addEventListener('click', () => loadFromLibrary(e));
+        grid.appendChild(card);
+      });
+    }
+
+    $('archive-search').addEventListener('input', ev => {
+      const q = ev.target.value.trim().toLowerCase();
+      renderArchiveCards(q
+        ? currentArchivedEntries.filter(e => e.title.toLowerCase().includes(q))
+        : currentArchivedEntries
+      );
+    });
+
+    async function archiveDeck(entry) {
+      const slug = slugFromEntry(entry);
+      try {
+        const r = await fetch('/archive/' + encodeURIComponent(slug), { method: 'POST' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        await refreshLibrary();
+        const q = $('library-search').value.trim().toLowerCase();
+        renderLibraryCards(q
+          ? currentLibraryEntries.filter(e => e.title.toLowerCase().includes(q))
+          : currentLibraryEntries
+        );
+      } catch (err) {
+        alert('Could not archive: ' + err.message);
+      }
+    }
+
+    async function restoreDeck(entry) {
+      const slug = slugFromEntry(entry);
+      try {
+        const r = await fetch('/unarchive/' + encodeURIComponent(slug), { method: 'POST' });
+        if (r.status === 409) {
+          showCollisionModal(slug, entry.title);
+          return;
+        }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        await refreshLibrary();
+        const q = $('archive-search').value.trim().toLowerCase();
+        renderArchiveCards(q
+          ? currentArchivedEntries.filter(e => e.title.toLowerCase().includes(q))
+          : currentArchivedEntries
+        );
+      } catch (err) {
+        alert('Could not restore: ' + err.message);
+      }
+    }
+
+    function showCollisionModal(slug, title) {
+      $('collision-msg').textContent =
+        '"' + title + '" already exists in your library. ' +
+        'Abort to keep both, or delete the archive copy to clean it up.';
+      $('collision-modal').classList.remove('hidden');
+
+      $('modal-abort').onclick = () => $('collision-modal').classList.add('hidden');
+
+      $('modal-replace').onclick = async () => {
+        $('collision-modal').classList.add('hidden');
+        try {
+          const r = await fetch('/archive/' + encodeURIComponent(slug), { method: 'DELETE' });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          await refreshLibrary();
+          const q = $('archive-search').value.trim().toLowerCase();
+          renderArchiveCards(q
+            ? currentArchivedEntries.filter(e => e.title.toLowerCase().includes(q))
+            : currentArchivedEntries
+          );
+        } catch (err) {
+          alert('Could not delete archive copy: ' + err.message);
+        }
+      };
     }
 
     /* ─── TOC ────────────────────────────────── */
@@ -767,14 +1016,14 @@
     function goTo(n) {
       const all = $('sbox').querySelectorAll('.slide');
       if (n < 0 || n >= all.length) return;
-      
+
       const goingForward = n > idx;
-      
+
       all[idx].classList.remove('active');
       all[idx].classList.toggle('prev', goingForward);
-      
+
       idx = n;
-      
+
       all[idx].classList.remove('prev');
       all[idx].classList.add('active');
       sync();
@@ -792,10 +1041,15 @@
     $('btn-prev').addEventListener('click', () => goTo(idx - 1));
     $('btn-next').addEventListener('click', () => goTo(idx + 1));
     $('btn-back').addEventListener('click', () => goToToc());
+    $('btn-archive-nav').addEventListener('click', () => {
+      showArchiveView(currentArchivedEntries);
+    });
     document.addEventListener('keydown', e => {
       if (document.activeElement === $('library-search')) return;
+      if (document.activeElement === $('archive-search')) return;
       if (e.key === 'ArrowLeft')  goTo(idx - 1);
       if (e.key === 'ArrowRight') goTo(idx + 1);
+      if (e.key === 'Escape') $('collision-modal').classList.add('hidden');
     });
 
     /* ─── Upload & Generation ───────────────── */
@@ -827,11 +1081,11 @@
     function showUploadView() {
       hideAll();
       $('upload-view').classList.remove('hidden');
+      $('btn-upload-nav').classList.add('active');
       showBreadcrumb([
         { label: 'SlideStudio', onClick: goLibraryHome },
         { label: 'New Slides', active: true }
       ]);
-      // If a job is already polling, keep showing the panel
       if (_pollTimer) {
         $('upload-zone').classList.add('hidden');
         $('gen-panel').classList.remove('hidden');
@@ -883,7 +1137,7 @@
 
         let label = STAGE_LABELS[key];
         if (key === 'chapter' && p && p.total > 1) {
-          label += ' ' + p.completed + ' / ' + p.total;
+          label += ' ' + p.completed + ' / ' + p.total;
         }
 
         const li = document.createElement('li');
@@ -915,12 +1169,7 @@
               currentPaperTitle = slideData.title || '';
               currentTocFile    = data.output_url;
               fromToc = false;
-              // Refresh library in background so breadcrumb home is current
-              load('/outputs/library.json').then(entries => {
-                currentLibraryEntries = entries.sort(
-                  (a, b) => (a.title || '').localeCompare(b.title || '')
-                );
-              }).catch(() => {});
+              await refreshLibrary();
               resetUploadZone();
               if (slideData.type === 'multi_deck') {
                 hideAll();
@@ -973,15 +1222,10 @@
             showReel(data.slides, data.images || []);
           }
         } catch (e) {
-          $('msg').textContent = 'The archvies are unreachable: ' + e.message;
+          $('msg').textContent = 'The archives are unreachable: ' + e.message;
         }
       } else {
-        try {
-          currentLibraryEntries = await load('/outputs/library.json');
-          currentLibraryEntries.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-        } catch (_) {
-          currentLibraryEntries = [];
-        }
+        await refreshLibrary();
         showLibrary(currentLibraryEntries);
       }
     }
