@@ -118,6 +118,51 @@ class TestArchiveEndpoint:
         r = c.post("/archive/paper")
         assert r.json() == {"status": "archived"}
 
+    def test_archive_collision_returns_409(self, client):
+        c, outputs, archive = client
+        _write_single_deck(archive / "paper.json", "Archived Version")
+        _write_single_deck(outputs / "paper.json", "Library Version")
+        r = c.post("/archive/paper")
+        assert r.status_code == 409
+
+    def test_archive_collision_leaves_both_intact(self, client):
+        c, outputs, archive = client
+        _write_single_deck(archive / "paper.json", "Archived Version")
+        _write_single_deck(outputs / "paper.json", "Library Version")
+        c.post("/archive/paper")
+        archived = json.loads((archive / "paper.json").read_text())
+        active = json.loads((outputs / "paper.json").read_text())
+        assert archived["title"] == "Archived Version"
+        assert active["title"] == "Library Version"
+
+    def test_archive_multi_deck_collision_returns_409(self, client):
+        c, outputs, archive = client
+        _write_multi_deck(archive / "textbook")
+        _write_multi_deck(outputs / "textbook")
+        r = c.post("/archive/textbook")
+        assert r.status_code == 409
+        # without the guard, shutil.move nests the dir inside the existing one
+        assert not (archive / "textbook" / "textbook").exists()
+
+
+# ──────────────────────────────────────────────────────────────
+# Cache headers — slug paths are reused across runs, so the
+# browser must revalidate instead of trusting heuristic freshness
+# ──────────────────────────────────────────────────────────────
+
+class TestOutputCacheHeaders:
+    def test_outputs_responses_require_revalidation(self, client):
+        c, outputs, archive = client
+        _write_single_deck(outputs / "paper.json")
+        r = c.get("/outputs/paper.json")
+        assert r.status_code == 200
+        assert r.headers["cache-control"] == "no-cache"
+
+    def test_library_response_requires_revalidation(self, client):
+        c, outputs, archive = client
+        r = c.get("/library")
+        assert r.headers["cache-control"] == "no-cache"
+
 
 # ──────────────────────────────────────────────────────────────
 # POST /unarchive/{slug}

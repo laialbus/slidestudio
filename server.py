@@ -212,6 +212,18 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="SlideStudio", docs_url=None, redoc_url=None)
 
+    # Slide JSON paths are reused across runs (slugs are title-derived), so a
+    # regenerated or archived deck can change content behind a URL the browser
+    # has already cached. no-cache forces revalidation; the ETag from
+    # StaticFiles keeps unchanged responses as cheap 304s.
+    @app.middleware("http")
+    async def _revalidate_outputs(request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path == "/library" or path.startswith("/outputs/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     # ── API routes ─────────────────────────────────────────────────────────
 
     @app.post("/upload")
@@ -256,11 +268,19 @@ def create_app() -> FastAPI:
         single = _OUTPUTS_DIR / f"{slug}.json"
         multi  = _OUTPUTS_DIR / slug
         if single.is_file():
-            shutil.move(str(single), str(_ARCHIVE_DIR / f"{slug}.json"))
+            src, dest = single, _ARCHIVE_DIR / f"{slug}.json"
         elif multi.is_dir():
-            shutil.move(str(multi), str(_ARCHIVE_DIR / slug))
+            src, dest = multi, _ARCHIVE_DIR / slug
         else:
             raise HTTPException(status_code=404, detail="Deck not found.")
+        # shutil.move would silently replace a file or nest a directory inside
+        # an existing one — refuse instead of destroying the archived copy.
+        if dest.exists():
+            raise HTTPException(
+                status_code=409,
+                detail="An archived deck with this name already exists.",
+            )
+        shutil.move(str(src), str(dest))
         rebuild_library_manifest(_OUTPUTS_DIR)
         return {"status": "archived"}
 

@@ -27,6 +27,13 @@ def _notify(cb: ProgressCallback, stage: str, completed: int, total: int) -> Non
         cb(stage, completed, total)
 
 
+def _output_slug(title: str) -> str:
+    """Slug for output paths. slugify() returns "" for empty or all-symbol
+    titles, which would produce a hidden file named ".json" — fall back to
+    the same name used for untitled extractions."""
+    return slugify(title) or "untitled_document"
+
+
 def _write_debug(title: str, output_dir: Path | str, intermediates: dict) -> None:
     """Write debug intermediates to output_dir/debug/<slug>/."""
     if not intermediates:
@@ -90,7 +97,7 @@ def write_output(
     model: str,
 ) -> Path:
     now = datetime.now(timezone.utc).isoformat()
-    slug = slugify(title)
+    slug = _output_slug(title)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / f"{slug}.json"
@@ -242,7 +249,7 @@ def write_deck_index(
     output_dir: Path | str,
 ) -> tuple[DeckIndex, Path]:
     now = datetime.now(timezone.utc).isoformat()
-    slug = slugify(title)
+    slug = _output_slug(title)
     out_dir = Path(output_dir) / slug
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -340,7 +347,7 @@ async def run_multi_deck(
 def _cleanup_stale_output(output_dir: Path | str, title: str, is_multi: bool) -> None:
     """Remove the previous output for this document so a fresh run starts clean."""
     out = Path(output_dir)
-    slug = slugify(title)
+    slug = _output_slug(title)
     if is_multi:
         stale = out / slug
         if stale.is_dir():
