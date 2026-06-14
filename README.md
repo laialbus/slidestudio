@@ -4,7 +4,7 @@ Turn any academic PDF into a polished, scrollable slide deck — locally, with y
 
 SlideStudio runs a multi-agent pipeline (Analyst → Planner → Writer → Critic/Refiner) that understands your document, designs a slide arc, drafts content, and self-reviews for accuracy. Short papers produce a single deck; long textbooks produce a chapter-per-deck index you can browse like a table of contents.
 
-> This codebase was written almost entirely by [Claude Sonnet 4.6](https://www.anthropic.com/claude), with a small number of changes contributed by [Gemini 3](https://deepmind.google/technologies/gemini/).
+> This codebase was written almost entirely by [Claude](https://www.anthropic.com/claude), with a small number of changes contributed by [Gemini 3](https://deepmind.google/technologies/gemini/).
 
 ---
 
