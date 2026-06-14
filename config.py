@@ -40,6 +40,11 @@ PIPELINE = {
     "backoff_wait_max":           60,   # tenacity wait_exponential max seconds
     "circuit_breaker_threshold":  5,    # consecutive failures before the circuit opens
     "circuit_breaker_cooldown":   60,   # seconds to wait before probing after the circuit opens
+    # ── Output ──────────────────────────────────────────────────────────────────
+    # duplicate_policy: what to do with previous outputs for the same paper.
+    #   "overwrite" — delete older outputs for the same title before writing
+    #   "keep_both" — keep every run; timestamped filenames never collide
+    "duplicate_policy":     "overwrite",
     # ── Viewer ──────────────────────────────────────────────────────────────────
     "port":                 7654,    # localhost port for the --open HTML server
     # ── Debug ───────────────────────────────────────────────────────────────────
@@ -65,9 +70,23 @@ if _SETTINGS_PATH.exists():
         PROVIDER = _overrides["PROVIDER"]
     if "MODELS" in _overrides:
         MODELS = _overrides["MODELS"]
+    if "PIPELINE" in _overrides:
+        _unknown = set(_overrides["PIPELINE"]) - set(PIPELINE)
+        if _unknown:
+            _sys.exit(
+                f"settings.json error: unknown PIPELINE keys {sorted(_unknown)}. "
+                f"Valid keys: {sorted(PIPELINE)}"
+            )
+        PIPELINE.update(_overrides["PIPELINE"])
 
     if PROVIDER not in MODELS:
         _sys.exit(
             f"settings.json error: PROVIDER={PROVIDER!r} is not a key in MODELS. "
             f"Available keys: {list(MODELS.keys())}"
         )
+
+if PIPELINE["duplicate_policy"] not in ("overwrite", "keep_both"):
+    _sys.exit(
+        f"config error: duplicate_policy={PIPELINE['duplicate_policy']!r} "
+        f"must be 'overwrite' or 'keep_both'."
+    )

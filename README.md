@@ -162,9 +162,11 @@ Documents with **3 or fewer chapters** produce a single JSON file:
 ```
 outputs/
 ├── library.json                    ← auto-maintained library index
-└── attention-is-all-you-need.json
+└── attention_is_all_you_need_20260609T142755.json
 ```
 
+Filenames are `{slug}_{YYYYMMDDTHHMMSS}.json` — a slugified title plus the UTC
+generation timestamp, so re-running a paper never reuses an existing path.
 Open with `--open` to view the scrollable slide reel.
 
 ### Multi-deck (long documents)
@@ -174,7 +176,7 @@ Documents with **more than 3 chapters** produce one deck per chapter plus an ind
 ```
 outputs/
 ├── library.json                    ← auto-maintained library index
-└── biology-101-textbook/
+└── biology_101_textbook_20260609T142755/
     ├── index.json              ← table of contents
     ├── 01_introduction.json
     ├── 02_cell_structure.json
@@ -185,7 +187,14 @@ The viewer shows a chapter grid on load; clicking a chapter transitions into its
 
 ### `library.json`
 
-Every `run` automatically upserts an entry into `outputs/library.json` — a flat JSON array sorted newest-first by `generated_at`. Each entry records title, file path, type (`single_deck` / `multi_deck`), slide count, provider, and model. The in-browser library reads this file to populate the home screen.
+Every `run` automatically upserts an entry into `outputs/library.json` — a flat JSON array sorted newest-first by `generated_at`. Each entry records title, file path, type (`single_deck` / `multi_deck`), slide count, provider, and model. The in-browser library reads this file to populate the home screen, so the timestamped filenames never need to be read by a human — the manifest is the title-to-file trace.
+
+### Regenerating the same paper
+
+`PIPELINE["duplicate_policy"]` in `config.py` (also settable from the web UI settings panel) controls what happens when you regenerate a paper whose slides already exist in `outputs/`:
+
+- `"overwrite"` (default) — older outputs for the same title are deleted before the new one is written. Archived copies are never touched.
+- `"keep_both"` — every generation is kept side by side; the timestamp in the filename keeps them distinct.
 
 ---
 

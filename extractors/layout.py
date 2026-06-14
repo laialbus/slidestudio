@@ -15,6 +15,7 @@ import pymupdf
 _LAYOUT_DPI = 96
 _MIN_LAYOUT_CONFIDENCE = 0.5
 _MAX_CAPTION_FIGURE_GAP_PT = 80.0
+_PANEL_MERGE_GAP_PT = 18.0  # pt — max gap on BOTH axes to fuse composite-figure panels
 
 # Surya label mappings:
 #   "Figure"  ← <complex-block> (architecture diagrams, charts, schematics)
@@ -86,6 +87,61 @@ class LayoutAnalyser:
             return regions
         except Exception:
             return []
+
+
+def _merge_figure_regions(
+    figures: list[LayoutRegion],
+    gap_pt: float = _PANEL_MERGE_GAP_PT,
+) -> list[LayoutRegion]:
+    """
+    Fuse figure regions that are adjacent or overlapping on BOTH axes into a
+    single region.
+
+    Surya detects each panel of a composite figure (e.g. Figure 2a / 2b / 2c)
+    as its own Figure/Picture region. Without merging, the greedy 1:1 caption
+    pairing in _pair_figures_captions attaches the caption to one panel and
+    orphans the rest, so the composite renders as a single sub-panel.
+
+    Two regions merge when the gap between their bounding boxes is <= gap_pt on
+    BOTH the x and y axis (the gap is 0 when they overlap on that axis).
+    Requiring a small gap on both axes keeps genuinely separate figures
+    elsewhere on the page — which are divided by a caption and whitespace —
+    apart. Merging is transitive (union-find), so a row or grid of panels
+    collapses into one region.
+    """
+    n = len(figures)
+    if n < 2:
+        return list(figures)
+
+    parent = list(range(n))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            a, b = figures[i].bbox, figures[j].bbox
+            x_gap = max(0.0, max(a.x0, b.x0) - min(a.x1, b.x1))
+            y_gap = max(0.0, max(a.y0, b.y0) - min(a.y1, b.y1))
+            if x_gap <= gap_pt and y_gap <= gap_pt:
+                parent[find(i)] = find(j)
+
+    groups: dict[int, list[int]] = {}
+    for i in range(n):
+        groups.setdefault(find(i), []).append(i)
+
+    merged: list[LayoutRegion] = []
+    for members in groups.values():
+        box = pymupdf.Rect(figures[members[0]].bbox)
+        conf = figures[members[0]].confidence
+        for k in members[1:]:
+            box |= figures[k].bbox
+            conf = max(conf, figures[k].confidence)
+        merged.append(LayoutRegion(label="Figure", bbox=box, confidence=conf))
+    return merged
 
 
 def _pair_figures_captions(

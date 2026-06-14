@@ -2,7 +2,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from schemas.constants import DECK_TITLE_MAX, PLANNED_SLIDE_ANNOTATION_MAX
+from schemas.constants import (
+    DECK_TITLE_MAX,
+    MAX_FIGURES_PER_SLIDE,
+    PLANNED_SLIDE_ANNOTATION_MAX,
+)
 
 VALID_TAGS = Literal[
     "Introduction", "Key Concept", "Definition",
@@ -17,8 +21,9 @@ class PlannedSlide(BaseModel):
     intention:      str       = Field(max_length=PLANNED_SLIDE_ANNOTATION_MAX)
     emphasis:       str       = Field(max_length=PLANNED_SLIDE_ANNOTATION_MAX)
     chunk_indices:  list[int] = Field(min_length=1, max_length=3)
-    wants_image:    bool      = False  # LLM sets; True only for design/mechanism slides
-    image_ref:      int | None = None  # set by pipeline post-processing, not the LLM
+    # Figures the Planner requests from the catalog by id; the pipeline then
+    # validates and prunes this list (exists in catalog, no reuse, capped).
+    figure_ids:     list[int] = Field(default_factory=list, max_length=MAX_FIGURES_PER_SLIDE)
 
 
 class SlidePlan(BaseModel):

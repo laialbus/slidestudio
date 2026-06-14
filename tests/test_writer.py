@@ -327,10 +327,10 @@ class TestWriterBatchSizeRequired:
 
 
 # ──────────────────────────────────────────────────────────────
-# image_ref post-processing — PlannedSlide value always wins
+# image_refs post-processing — validated PlannedSlide value always wins
 # ──────────────────────────────────────────────────────────────
 
-def _planned_slide_with_ref(index: int, image_ref: int | None) -> PlannedSlide:
+def _planned_slide_with_refs(index: int, figure_ids: list[int]) -> PlannedSlide:
     return PlannedSlide(
         index=index,
         tag="Key Concept",
@@ -338,40 +338,49 @@ def _planned_slide_with_ref(index: int, image_ref: int | None) -> PlannedSlide:
         intention="Explain.",
         emphasis="Note.",
         chunk_indices=[0],
-        image_ref=image_ref,
+        figure_ids=figure_ids,
     )
 
 
-class TestImageRefPostProcessing:
-    def test_planned_image_ref_propagates_to_draft(self):
+class TestImageRefsPostProcessing:
+    def test_planned_figure_ids_propagate_to_draft(self):
         slides = [
-            _planned_slide_with_ref(1, 3),
-            _planned_slide_with_ref(2, None),
-            _planned_slide_with_ref(3, None),
-            _planned_slide_with_ref(4, None),
+            _planned_slide_with_refs(1, [3]),
+            _planned_slide_with_refs(2, []),
+            _planned_slide_with_refs(3, []),
+            _planned_slide_with_refs(4, []),
         ]
         plan = _slide_plan(slides)
-        # LLM returns null for all image_refs (as instructed)
+        # LLM returns empty image_refs for all (as instructed)
         stub  = StubProvider({SlidesDraft: [_draft([_draft_slide(i + 1) for i in range(4)])]})
         agent = WriterAgent(stub, writer_batch_size=4)
         result = _run(agent.run(plan, _doc_map(), ["chunk"]))
-        assert result.slides[0].image_ref == 3
+        assert result.slides[0].image_refs == [3]
 
-    def test_none_planned_ref_yields_null_in_draft(self):
-        slides = [_planned_slide_with_ref(i + 1, None) for i in range(4)]
+    def test_multiple_figure_ids_propagate(self):
+        slides = [_planned_slide_with_refs(1, [3, 7])] + [
+            _planned_slide_with_refs(i + 2, []) for i in range(3)
+        ]
+        plan = _slide_plan(slides)
+        stub  = StubProvider({SlidesDraft: [_draft([_draft_slide(i + 1) for i in range(4)])]})
+        agent = WriterAgent(stub, writer_batch_size=4)
+        result = _run(agent.run(plan, _doc_map(), ["chunk"]))
+        assert result.slides[0].image_refs == [3, 7]
+
+    def test_empty_planned_refs_yield_empty_in_draft(self):
+        slides = [_planned_slide_with_refs(i + 1, []) for i in range(4)]
         plan   = _slide_plan(slides)
         stub   = StubProvider({SlidesDraft: [_draft([_draft_slide(i + 1) for i in range(4)])]})
         agent  = WriterAgent(stub, writer_batch_size=4)
         result = _run(agent.run(plan, _doc_map(), ["chunk"]))
         for slide in result.slides:
-            assert slide.image_ref is None
+            assert slide.image_refs == []
 
-    def test_planned_ref_overrides_llm_hallucinated_ref(self):
-        # LLM outputs image_ref=99 for slide 1 but the planned value is None
-        slides = [_planned_slide_with_ref(i + 1, None) for i in range(4)]
+    def test_planned_refs_override_llm_hallucinated_refs(self):
+        # LLM outputs image_refs=[99] for slide 1 but the planned value is empty
+        slides = [_planned_slide_with_refs(i + 1, []) for i in range(4)]
         plan   = _slide_plan(slides)
-        # Inject a hallucinated image_ref into the LLM response
-        hallucinated = DraftSlide(index=1, heading="S", body="B.", tag="Key Concept", image_ref=99)
+        hallucinated = DraftSlide(index=1, heading="S", body="B.", tag="Key Concept", image_refs=[99])
         draft_with_hallucination = SlidesDraft(
             title="Test Deck",
             slides=[hallucinated] + [_draft_slide(i + 2) for i in range(3)],
@@ -379,4 +388,4 @@ class TestImageRefPostProcessing:
         stub  = StubProvider({SlidesDraft: [draft_with_hallucination]})
         agent = WriterAgent(stub, writer_batch_size=4)
         result = _run(agent.run(plan, _doc_map(), ["chunk"]))
-        assert result.slides[0].image_ref is None
+        assert result.slides[0].image_refs == []

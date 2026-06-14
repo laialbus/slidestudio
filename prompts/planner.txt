@@ -7,6 +7,9 @@ $doc_map
 GLOBAL SKELETON:
 $skeleton
 
+FIGURE CATALOG (the only figures you may request, by id):
+$figure_catalog
+
 Design a slide plan that covers the key concepts, arguments, and insights from the document. Each slide must have a clear pedagogical purpose.
 
 Return a JSON object with:
@@ -19,13 +22,21 @@ Return a JSON object with:
   - intention: what this slide is meant to teach (max 200 chars)
   - emphasis: what the viewer should walk away remembering (max 200 chars)
   - chunk_indices: list of 1, 2, or 3 integer chunk IDs (NEVER empty, NEVER 4 or more) whose raw text is needed to write this slide accurately
-  - wants_image: set to true ONLY when ALL of these hold:
-      (a) the slide tag is "Key Concept", "Definition", or "Introduction"
-      (b) the slide's intention is to explain a design, mechanism, architecture, or system component
-          (not to present results, comparisons, or performance data)
-      (c) a diagram or illustration would help a student form a mental model of the concept
-      Set to false for "Data Point", "Insight", "Takeaway", "Summary", and "Example" slides,
-      and for any slide whose content is primarily about measurements or experimental outcomes.
+  - figure_ids: list of 0 to 3 figure ids drawn from the FIGURE CATALOG above
+    (default to an empty list). Request a figure only when it genuinely helps
+    the student understand THIS slide's point — name the catalog id directly.
+    Use the catalog's caption and purpose to judge fit:
+      * "conceptual" figures (diagrams, architectures, schematics) suit
+        "Introduction", "Key Concept", and "Definition" slides that explain a
+        mechanism or structure;
+      * "evidential" figures (charts, plots, result tables) suit "Data Point"
+        and "Insight" slides that present measurements or comparisons.
+    You may request more than one figure when a slide is best served by a small
+    set (max 3); they will be shown stacked. Only request ids that appear in the
+    catalog. Do NOT request the same figure on more than one slide — each figure
+    is shown once, on the slide that uses it best. Prefer a figure whose source
+    chunk is among this slide's chunk_indices, but that is a preference, not a
+    requirement. Leave the list empty when no catalog figure adds value.
 
 Slide design rules for a college student audience:
 - For every 3 "Key Concept" or "Definition" slides, schedule at least 1

@@ -65,7 +65,7 @@ class AlwaysPassingCritic:
     def __init__(self):
         self.call_count = 0
 
-    async def run(self, doc_map, slides):
+    async def run(self, doc_map, slides, **kwargs):
         self.call_count += 1
         return _passing_critique(slides)
 
@@ -74,7 +74,7 @@ class AlwaysFailingCritic:
     def __init__(self):
         self.call_count = 0
 
-    async def run(self, doc_map, slides):
+    async def run(self, doc_map, slides, **kwargs):
         self.call_count += 1
         return _failing_critique(slides)
 
@@ -85,7 +85,7 @@ class PassAfterNCritic:
         self.pass_on_call = pass_on_call
         self.call_count = 0
 
-    async def run(self, doc_map, slides):
+    async def run(self, doc_map, slides, **kwargs):
         self.call_count += 1
         if self.call_count >= self.pass_on_call:
             return _passing_critique(slides)
@@ -96,7 +96,7 @@ class IdentityRefiner:
     def __init__(self):
         self.call_count = 0
 
-    async def run(self, doc_map, slides, critique, deck_feedback=None):
+    async def run(self, doc_map, slides, critique, deck_feedback=None, **kwargs):
         self.call_count += 1
         return slides
 

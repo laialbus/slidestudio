@@ -231,6 +231,43 @@ class TestSuccessfulCall:
 
         asyncio.run(run())
 
+    def test_response_schema_not_forwarded(self):
+        # Native structured output is intentionally disabled: dict-bearing
+        # schemas compile to additionalProperties, which Gemini rejects. The
+        # provider must not forward response_schema even when one is supplied.
+        from pydantic import BaseModel as _BM
+
+        class _Schema(_BM):
+            result: str
+
+        async def run():
+            with patch("providers.google.genai.Client") as mock_cls:
+                mock_client = _setup_mock_client(mock_cls)
+                result = await _make_provider()._call(
+                    [{"role": "user", "content": "test"}], "",
+                    response_schema=_Schema,
+                )
+                cfg = mock_client.aio.models.generate_content.call_args.kwargs["config"]
+                assert cfg.response_schema is None
+                assert result == '{"result": "ok"}'
+
+        asyncio.run(run())
+
+    def test_thinking_level_enabled(self):
+        from providers.google import _THINKING_LEVEL
+
+        async def run():
+            with patch("providers.google.genai.Client") as mock_cls:
+                mock_client = _setup_mock_client(mock_cls)
+                await _make_provider()._call(
+                    [{"role": "user", "content": "test"}], ""
+                )
+                cfg = mock_client.aio.models.generate_content.call_args.kwargs["config"]
+                assert cfg.thinking_config is not None
+                assert cfg.thinking_config.thinking_level == _THINKING_LEVEL
+
+        asyncio.run(run())
+
     def test_client_created_before_generate_content(self):
         """genai.Client must be instantiated before generate_content is awaited."""
         call_order: list[str] = []

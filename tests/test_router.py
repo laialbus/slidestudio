@@ -72,6 +72,7 @@ def _route(skeleton, total_chars, chapter_threshold=3, length_threshold=40_000, 
             total_chars=total_chars,
             max_review_cycles=1,
             debug=False,
+            duplicate_policy="overwrite",
             **kw,
         ))
 

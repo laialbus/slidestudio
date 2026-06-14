@@ -11,10 +11,12 @@ import pytest
 from extractors.layout import (
     LayoutAnalyser,
     LayoutRegion,
+    _merge_figure_regions,
     _pair_figures_captions,
     _FIGURE_LABELS,
     _CAPTION_LABELS,
     _MAX_CAPTION_FIGURE_GAP_PT,
+    _PANEL_MERGE_GAP_PT,
 )
 
 
@@ -256,3 +258,63 @@ class TestPairFiguresCaptions:
         # With looser threshold of 40, gap=30 is eligible
         pairs, _ = _pair_figures_captions([fig], [cap], max_gap_pt=40.0)
         assert pairs[0][1] is cap
+
+
+# ──────────────────────────────────────────────────────────────
+# _merge_figure_regions — composite-panel fusion
+# ──────────────────────────────────────────────────────────────
+
+class TestMergeFigureRegions:
+    def test_empty_returns_empty(self):
+        assert _merge_figure_regions([]) == []
+
+    def test_single_region_unchanged(self):
+        fig = _fig(10, 10, 100, 100)
+        merged = _merge_figure_regions([fig])
+        assert len(merged) == 1
+        assert merged[0].bbox == fig.bbox
+
+    def test_horizontally_adjacent_panels_merge(self):
+        # Two side-by-side panels: same row, small x-gap → one composite.
+        left  = _fig(10, 50, 100, 180)
+        right = _fig(110, 50, 200, 180)   # x-gap = 10 < 18
+        merged = _merge_figure_regions([left, right])
+        assert len(merged) == 1
+        assert merged[0].bbox == pymupdf.Rect(10, 50, 200, 180)
+
+    def test_vertically_stacked_panels_merge(self):
+        top    = _fig(10, 50, 200, 120)
+        bottom = _fig(10, 130, 200, 200)  # y-gap = 10 < 18
+        merged = _merge_figure_regions([top, bottom])
+        assert len(merged) == 1
+        assert merged[0].bbox == pymupdf.Rect(10, 50, 200, 200)
+
+    def test_distant_figures_stay_separate(self):
+        a = _fig(10, 50, 200, 180)
+        b = _fig(10, 400, 200, 520)  # y-gap = 220 ≫ 18
+        merged = _merge_figure_regions([a, b])
+        assert len(merged) == 2
+
+    def test_grid_of_panels_collapses_transitively(self):
+        # 2×2 grid; merging is transitive so all four fuse into one.
+        tl = _fig(10, 50, 100, 120)
+        tr = _fig(110, 50, 200, 120)
+        bl = _fig(10, 130, 100, 200)
+        br = _fig(110, 130, 200, 200)
+        merged = _merge_figure_regions([tl, tr, bl, br])
+        assert len(merged) == 1
+        assert merged[0].bbox == pymupdf.Rect(10, 50, 200, 200)
+
+    def test_merged_region_keeps_max_confidence(self):
+        a = LayoutRegion(label="Figure", bbox=pymupdf.Rect(10, 50, 100, 180), confidence=0.6)
+        b = LayoutRegion(label="Picture", bbox=pymupdf.Rect(110, 50, 200, 180), confidence=0.95)
+        merged = _merge_figure_regions([a, b])
+        assert len(merged) == 1
+        assert merged[0].confidence == 0.95
+
+    def test_gap_at_threshold_boundary(self):
+        # x-gap exactly equal to the threshold still merges (<=).
+        left  = _fig(10, 50, 100, 180)
+        right = _fig(100 + _PANEL_MERGE_GAP_PT, 50, 200, 180)
+        merged = _merge_figure_regions([left, right])
+        assert len(merged) == 1

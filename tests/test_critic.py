@@ -182,3 +182,49 @@ class TestCriticWithFailures:
         slide2 = next(s for s in result.slides if s.index == 2)
         assert slide2.passed is True
         assert slide2.issues == []
+
+
+# ──────────────────────────────────────────────────────────────
+# Tests — source chunks threaded in for depth review
+# ──────────────────────────────────────────────────────────────
+
+class TestCriticSourceChunks:
+    def _make_agent(self, count: int = 2) -> tuple[CriticAgent, StubProvider]:
+        critique = Critique(
+            slides=[SlideReview(index=i + 1, passed=True) for i in range(count)]
+        )
+        return CriticAgent(StubProvider({Critique: [critique]})), None
+
+    def test_source_chunk_text_in_prompt(self):
+        agent = CriticAgent(StubProvider(
+            {Critique: [Critique(slides=[SlideReview(index=1, passed=True)])]}
+        ))
+        chunks = ["UNIQUE_SOURCE_TEXT_OMEGA appears here.", "other chunk"]
+        _run(agent.run(
+            _doc_map(), _slides_draft(1),
+            chunks=chunks, slide_chunks={1: [0]},
+        ))
+        _, prompt = agent.provider.received_prompts[0]
+        assert "UNIQUE_SOURCE_TEXT_OMEGA" in prompt
+
+    def test_unreferenced_chunk_not_in_prompt(self):
+        agent = CriticAgent(StubProvider(
+            {Critique: [Critique(slides=[SlideReview(index=1, passed=True)])]}
+        ))
+        chunks = ["referenced chunk zero", "UNREFERENCED_TEXT_KAPPA"]
+        _run(agent.run(
+            _doc_map(), _slides_draft(1),
+            chunks=chunks, slide_chunks={1: [0]},
+        ))
+        _, prompt = agent.provider.received_prompts[0]
+        assert "UNREFERENCED_TEXT_KAPPA" not in prompt
+
+    def test_runs_without_chunks(self):
+        # Backward-compatible: omitting chunks substitutes a sentinel, no crash.
+        agent = CriticAgent(StubProvider(
+            {Critique: [Critique(slides=[SlideReview(index=1, passed=True)])]}
+        ))
+        result = _run(agent.run(_doc_map(), _slides_draft(1)))
+        assert isinstance(result, Critique)
+        _, prompt = agent.provider.received_prompts[0]
+        assert "no source chunks available" in prompt

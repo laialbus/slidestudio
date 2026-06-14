@@ -1,4 +1,5 @@
 import asyncio
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +28,49 @@ def _notify(cb: ProgressCallback, stage: str, completed: int, total: int) -> Non
         cb(stage, completed, total)
 
 
+def build_figure_catalog(
+    images: list[dict],
+    chunk_images: list[list[int]],
+    figure_purposes: list[dict],
+) -> list[dict]:
+    """
+    Build the compact figure catalog the Planner chooses from: one entry per
+    referenceable figure, each {figure_id, caption, purpose, source_chunk}.
+
+    A figure is referenceable only if its caption matched a [FIGURE_ID] marker
+    and landed in a chunk — i.e. it appears in chunk_images. Figures with
+    empty or unmatched captions never appear there, so they are excluded from
+    the catalog entirely (they would otherwise be unreferenceable dead weight).
+
+    source_chunk is the first chunk the figure's marker fell in, used downstream
+    only as a soft ranking signal. purpose is the Analyst's conceptual/evidential
+    hint, or "unspecified" when the Analyst did not classify it.
+    """
+    caption_by_id = {img["index"]: img.get("caption", "") for img in images}
+
+    source_chunk: dict[int, int] = {}
+    for chunk_idx, fig_ids in enumerate(chunk_images):
+        for fig_id in fig_ids:
+            source_chunk.setdefault(fig_id, chunk_idx)
+
+    catalog: list[dict] = []
+    for fig_id in sorted(source_chunk):
+        caption = caption_by_id.get(fig_id, "").strip()
+        if not caption:
+            continue  # defensive — marker-matched figures always have a caption
+        purpose = next(
+            (fp[fig_id] for fp in figure_purposes if fig_id in fp),
+            "unspecified",
+        )
+        catalog.append({
+            "figure_id":    fig_id,
+            "caption":      caption,
+            "purpose":      purpose,
+            "source_chunk": source_chunk[fig_id],
+        })
+    return catalog
+
+
 def _output_slug(title: str) -> str:
     """Slug for output paths. slugify() returns "" for empty or all-symbol
     titles, which would produce a hidden file named ".json" — fall back to
@@ -34,11 +78,24 @@ def _output_slug(title: str) -> str:
     return slugify(title) or "untitled_document"
 
 
+def _unique_output_path(out_dir: Path, slug: str, stamp: str, suffix: str = "") -> Path:
+    """
+    Return out_dir/{slug}_{stamp}{suffix}, appending a counter if two runs
+    land in the same second (only possible with duplicate_policy=keep_both).
+    """
+    candidate = out_dir / f"{slug}_{stamp}{suffix}"
+    n = 2
+    while candidate.exists():
+        candidate = out_dir / f"{slug}_{stamp}_{n}{suffix}"
+        n += 1
+    return candidate
+
+
 def _write_debug(title: str, output_dir: Path | str, intermediates: dict) -> None:
     """Write debug intermediates to output_dir/debug/<slug>/."""
     if not intermediates:
         return
-    slug = slugify(title)
+    slug = _output_slug(title)
     debug_dir = Path(output_dir) / "debug" / slug
     debug_dir.mkdir(parents=True, exist_ok=True)
     for fname, key in [
@@ -63,7 +120,7 @@ def _build_deck_output(
 ) -> DeckOutput:
     """Build a DeckOutput, filtering images to only those referenced by the slides."""
     referenced_ids = {
-        s.image_ref for s in slides_final.slides if s.image_ref is not None
+        ref for s in slides_final.slides for ref in s.image_refs
     }
     deck_images = [
         ImageEntry(
@@ -96,11 +153,14 @@ def write_output(
     provider: str,
     model: str,
 ) -> Path:
-    now = datetime.now(timezone.utc).isoformat()
+    generated = datetime.now(timezone.utc)
+    now = generated.isoformat()
     slug = _output_slug(title)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    output_path = out_dir / f"{slug}.json"
+    output_path = _unique_output_path(
+        out_dir, slug, generated.strftime("%Y%m%dT%H%M%S"), suffix=".json"
+    )
     deck_output = _build_deck_output(
         slides_final, all_images, generated_at=now, provider=provider, model=model
     )
@@ -130,8 +190,7 @@ async def run_single_deck(
     max_review_cycles: int,
     debug: bool,
     output_dir: Path | str,
-    chunk_images: list[list[int]] = [],
-    figure_purposes: list[dict] = [],
+    figure_catalog: list[dict] = [],
     scope: SectionEntry | None = None,
     checkpoint: Checkpoint | None = None,
     _write: bool = True,
@@ -165,8 +224,8 @@ async def run_single_deck(
     slide_plan = ck.load("slide_plan", SlidePlan) if ck else None
     if slide_plan is None:
         slide_plan = await agents["planner"].run(
-            doc_map=doc_map, skeleton=skeleton, chunk_images=chunk_images,
-            figure_purposes=figure_purposes, scope=scope,
+            doc_map=doc_map, skeleton=skeleton,
+            figure_catalog=figure_catalog, scope=scope,
         )
         if ck:
             ck.save("slide_plan", slide_plan)
@@ -176,6 +235,10 @@ async def run_single_deck(
         slide_plan=slide_plan, doc_map=doc_map, chunks=chunks
     )
     _notify(on_progress, "writer", 1, 1)
+
+    # Slide index → source chunk indices, so the Critic/Refiner can read the
+    # raw material behind each slide and judge depth, not just coherence.
+    slide_chunks = {s.index: s.chunk_indices for s in slide_plan.slides}
 
     # Strip the Summary/Takeaway slide before the review loop — it is generated
     # from the completed deck afterward, not reviewed by the Critic.
@@ -194,6 +257,7 @@ async def run_single_deck(
 
     best_draft, unresolved = await run_review_loop(
         content_draft, doc_map, agents["critic"], agents["refiner"], max_review_cycles,
+        chunks=chunks, slide_chunks=slide_chunks,
         on_progress=on_progress,
     )
 
@@ -207,7 +271,10 @@ async def run_single_deck(
     else:
         summary_slide = None
 
-    final_critique = await agents["critic"].run(doc_map=doc_map, slides=best_draft)
+    final_critique = await agents["critic"].run(
+        doc_map=doc_map, slides=best_draft,
+        chunks=chunks, slide_chunks=slide_chunks,
+    )
 
     final_slides = [FinalSlide(**s.model_dump()) for s in best_draft.slides]
     if summary_slide:
@@ -248,9 +315,12 @@ def write_deck_index(
     agents: dict,
     output_dir: Path | str,
 ) -> tuple[DeckIndex, Path]:
-    now = datetime.now(timezone.utc).isoformat()
+    generated = datetime.now(timezone.utc)
+    now = generated.isoformat()
     slug = _output_slug(title)
-    out_dir = Path(output_dir) / slug
+    out_dir = _unique_output_path(
+        Path(output_dir), slug, generated.strftime("%Y%m%dT%H%M%S")
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     provider = agents["planner"].provider.name
@@ -300,8 +370,7 @@ async def run_multi_deck(
     max_review_cycles: int,
     debug: bool,
     output_dir: Path | str,
-    chunk_images: list[list[int]] = [],
-    figure_purposes: list[dict] = [],
+    figure_catalog: list[dict] = [],
     checkpoint: Checkpoint | None = None,
     on_progress: ProgressCallback = None,
 ) -> tuple[DeckIndex, list[str], Path]:
@@ -320,8 +389,7 @@ async def run_multi_deck(
             max_review_cycles=max_review_cycles,
             debug=debug,
             output_dir=output_dir,
-            chunk_images=chunk_images,
-            figure_purposes=figure_purposes,
+            figure_catalog=figure_catalog,
             scope=chapter,
             checkpoint=checkpoint.scoped(chapter.heading) if checkpoint else None,
             _write=False,
@@ -344,18 +412,38 @@ async def run_multi_deck(
     return deck_index, [], index_path
 
 
-def _cleanup_stale_output(output_dir: Path | str, title: str, is_multi: bool) -> None:
-    """Remove the previous output for this document so a fresh run starts clean."""
+# Reserved top-level names in outputs/ that cleanup must never touch, even
+# if a paper's slug happens to collide with them.
+_RESERVED_OUTPUT_NAMES = {"archive", "debug", "library.json"}
+
+
+def _cleanup_stale_output(output_dir: Path | str, title: str) -> None:
+    """
+    Remove previous outputs for this document so a fresh run starts clean
+    (duplicate_policy="overwrite"). Matches timestamped names
+    ({slug}_{YYYYMMDDTHHMMSS}[_n]) and legacy un-timestamped ones ({slug}),
+    for both single-deck files and multi-deck directories. Never descends
+    into archive/.
+    """
     out = Path(output_dir)
+    if not out.is_dir():
+        return
     slug = _output_slug(title)
-    if is_multi:
-        stale = out / slug
-        if stale.is_dir():
-            shutil.rmtree(stale)
-    else:
-        stale = out / f"{slug}.json"
-        if stale.exists():
-            stale.unlink()
+    pattern = re.compile(rf"^{re.escape(slug)}(_\d{{8}}T\d{{6}}(_\d+)?)?$")
+    for entry in out.iterdir():
+        if entry.name in _RESERVED_OUTPUT_NAMES:
+            continue
+        if entry.is_file():
+            if entry.suffix != ".json":
+                continue
+            stem = entry.name[:-len(".json")]
+        else:
+            stem = entry.name
+        if pattern.match(stem):
+            if entry.is_dir():
+                shutil.rmtree(entry)
+            else:
+                entry.unlink()
 
 
 async def route(
@@ -371,8 +459,8 @@ async def route(
     max_review_cycles: int,
     debug: bool,
     output_dir: Path | str,
-    chunk_images: list[list[int]] = [],
-    figure_purposes: list[dict] = [],
+    duplicate_policy: str,
+    figure_catalog: list[dict] = [],
     checkpoint: Checkpoint | None = None,
     on_progress: ProgressCallback = None,
 ):
@@ -381,24 +469,23 @@ async def route(
 
     # On a fresh run (not resuming from checkpoint), remove stale output so the
     # directory structure is always an exact reflection of the current run.
+    # keep_both skips this — timestamped filenames make every run distinct.
     is_resuming = checkpoint is not None and checkpoint._resume
-    if not is_resuming:
-        _cleanup_stale_output(output_dir, title, is_multi)
+    if not is_resuming and duplicate_policy == "overwrite":
+        _cleanup_stale_output(output_dir, title)
 
     if is_multi:
         return await run_multi_deck(
             title, doc_map, skeleton, chunks, images, agents,
             max_review_cycles, debug, output_dir,
-            chunk_images=chunk_images,
-            figure_purposes=figure_purposes,
+            figure_catalog=figure_catalog,
             checkpoint=checkpoint,
             on_progress=on_progress,
         )
     return await run_single_deck(
         title, doc_map, skeleton, chunks, images, agents,
         max_review_cycles, debug, output_dir,
-        chunk_images=chunk_images,
-        figure_purposes=figure_purposes,
+        figure_catalog=figure_catalog,
         checkpoint=checkpoint,
         on_progress=on_progress,
     )
@@ -426,6 +513,7 @@ async def run(
     multi_deck_length_threshold: int,
     max_review_cycles: int,
     debug: bool,
+    duplicate_policy: str,
     checkpoint: Checkpoint | None = None,
     on_progress: ProgressCallback = None,
 ):
@@ -469,6 +557,9 @@ async def run(
     chunk_images = extraction.chunk_images
     total_chars = extraction.char_count
 
+    # Compact figure catalog the Planner picks from (built once, shared across decks).
+    figure_catalog = build_figure_catalog(images, chunk_images, figure_purposes)
+
     if debug:
         level_counts: dict[int, int] = {}
         for s in skeleton.sections:
@@ -497,8 +588,8 @@ async def run(
         max_review_cycles=max_review_cycles,
         debug=debug,
         output_dir=output_dir,
-        chunk_images=chunk_images,
-        figure_purposes=figure_purposes,
+        duplicate_policy=duplicate_policy,
+        figure_catalog=figure_catalog,
         checkpoint=ck,
         on_progress=on_progress,
     )
@@ -510,13 +601,18 @@ async def run_review_loop(
     critic,
     refiner,
     max_review_cycles: int,
+    chunks: list[str] | None = None,
+    slide_chunks: dict[int, list[int]] | None = None,
     on_progress: ProgressCallback = None,
 ) -> tuple[SlidesDraft, list[str]]:
     current = draft
     unresolved: list[str] = []
 
     for cycle in range(1, max_review_cycles + 1):
-        critique = await critic.run(doc_map=doc_map, slides=current)
+        critique = await critic.run(
+            doc_map=doc_map, slides=current,
+            chunks=chunks, slide_chunks=slide_chunks,
+        )
         _notify(on_progress, "review", cycle, max_review_cycles)
         failed = critique.failed_slides
 
@@ -535,6 +631,8 @@ async def run_review_loop(
             slides=current,
             critique=critique,
             deck_feedback=critique.deck_feedback,
+            chunks=chunks,
+            slide_chunks=slide_chunks,
         )
 
     return current, unresolved

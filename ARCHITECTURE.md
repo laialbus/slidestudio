@@ -101,8 +101,8 @@ slidestudio/
 ├── outputs/                  # Generated slide sets land here
 │   ├── library.json          # Auto-maintained index of all decks
 │   ├── archive/              # Archived decks (hidden from main library)
-│   ├── paper.json            # Single-deck output (short documents)
-│   └── biology-textbook/     # Multi-deck output (long documents)
+│   ├── paper_<timestamp>.json   # Single-deck output (short documents)
+│   └── textbook_<timestamp>/    # Multi-deck output (long documents)
 │       ├── index.json
 │       ├── 01_introduction.json
 │       └── ...
@@ -754,7 +754,7 @@ After Analyst completes
  │  Writer          │    │    Planner  (scoped to chapter)          │
  │  Critic/Refiner  │    │    Writer                                │
  │                  │    │    Critic / Refiner loop                 │
- │  → paper.json    │    │  → outputs/textbook-title/               │
+ │  → paper_<ts>    │    │  → outputs/textbook_title_<ts>/          │
  └──────────────────┘    │      index.json                          │
                          │      01_chapter_one.json                 │
                          │      02_chapter_two.json  ...            │

@@ -224,7 +224,10 @@
       inset: 0;
       display: flex;
       flex-direction: column;
-      justify-content: center;
+      /* "safe center" keeps overflowing content scrollable from the top —
+         plain "center" pushes the overflow above the scroll origin, clipping
+         the heading or the top of a tall figure permanently. */
+      justify-content: safe center;
       padding: 8% 10%;
       opacity: 0;
       transform: translateX(30px);
@@ -280,12 +283,35 @@
       max-height: 300px;
       border: 1px solid var(--border);
       filter: grayscale(0.2);
+      cursor: zoom-in;
     }
     .slide-figure figcaption {
       font-size: 12px;
       color: var(--muted);
       font-family: 'Cormorant Garamond', serif;
       font-style: italic;
+    }
+
+    /* ── Figure zoom overlay ────────────────
+       Click a slide figure to view it full size; the 300px cap above keeps
+       slides compact, this lifts the cap on demand for dense diagrams. */
+    .zoom-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 4vmin;
+      background: rgba(0, 0, 0, 0.85);
+      cursor: zoom-out;
+    }
+    .zoom-overlay.open { display: flex; }
+    .zoom-overlay img {
+      max-width: 96vw;
+      max-height: 92vh;
+      object-fit: contain;
+      box-shadow: var(--shadow);
     }
 
     /* ── Controls ───────────────────────── */
@@ -685,6 +711,9 @@
     </div>
   </main>
 
+  <!-- Figure zoom overlay -->
+  <div class="zoom-overlay" id="zoom-overlay"><img id="zoom-img" alt=""></div>
+
   <!-- Settings Modal -->
   <div class="modal-backdrop hidden" id="settings-modal">
     <div class="modal modal-settings">
@@ -703,6 +732,14 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z" />
             </svg>
           </button>
+        </div>
+      </div>
+
+      <div class="settings-row">
+        <span class="settings-label">Regenerating a paper</span>
+        <div style="display:flex;gap:8px">
+          <button class="modal-btn" id="s-policy-overwrite" title="Replace the previous slides for the same paper">Overwrite</button>
+          <button class="modal-btn" id="s-policy-keep" title="Keep every generation side by side">Keep both</button>
         </div>
       </div>
 
@@ -1111,8 +1148,12 @@
           inner += '<div class="slide-math">$$' + s.latex + '$$</div>';
         }
 
-        if (s.image_ref != null) {
-          const img = deckImages.find(im => im.index === s.image_ref);
+        // Multiple figures render as a vertical stack. Accept the legacy
+        // singular image_ref too so previously generated decks still display.
+        const refs = Array.isArray(s.image_refs) ? s.image_refs
+                   : (s.image_ref != null ? [s.image_ref] : []);
+        refs.forEach(ref => {
+          const img = deckImages.find(im => im.index === ref);
           if (img && img.data_uri) {
             inner +=
               '<figure class="slide-figure">' +
@@ -1120,7 +1161,7 @@
               (img.caption ? '<figcaption>' + esc(img.caption) + '</figcaption>' : '') +
               '</figure>';
           }
-        }
+        });
 
         d.innerHTML = inner;
         box.appendChild(d);
@@ -1167,9 +1208,31 @@
     $('btn-archive-nav').addEventListener('click', () => {
       showArchiveView(currentArchivedEntries);
     });
+
+    /* ─── Figure click-to-zoom ──────────────── */
+    function openZoom(src, alt) {
+      $('zoom-img').src = src;
+      $('zoom-img').alt = alt || '';
+      $('zoom-overlay').classList.add('open');
+    }
+    function closeZoom() {
+      $('zoom-overlay').classList.remove('open');
+      $('zoom-img').src = '';
+    }
+    // Delegated so it covers figures in slides rendered after load.
+    $('sbox').addEventListener('click', e => {
+      const img = e.target.closest('.slide-figure img');
+      if (img) openZoom(img.src, img.alt);
+    });
+    $('zoom-overlay').addEventListener('click', closeZoom);
+
     document.addEventListener('keydown', e => {
       if (document.activeElement === $('library-search')) return;
       if (document.activeElement === $('archive-search')) return;
+      if ($('zoom-overlay').classList.contains('open')) {
+        if (e.key === 'Escape') closeZoom();
+        return;  // don't navigate slides while zoomed
+      }
       if (e.key === 'ArrowLeft')  goTo(idx - 1);
       if (e.key === 'ArrowRight') goTo(idx + 1);
       if (e.key === 'Escape') {
@@ -1334,12 +1397,14 @@
     /* ─── Settings Modal ─────────────────────── */
     let _sModels   = [];   // [{key, value}]
     let _sProvider = '';
+    let _sPolicy   = 'overwrite';   // "overwrite" | "keep_both"
 
     async function openSettings() {
       try {
         const data = await load('/settings');
         _sProvider = data.PROVIDER;
         _sModels   = Object.entries(data.MODELS).map(([key, value]) => ({ key, value }));
+        _sPolicy   = (data.PIPELINE && data.PIPELINE.duplicate_policy) || 'overwrite';
       } catch (_) {}
       renderSettingsForm();
       $('settings-modal').classList.remove('hidden');
@@ -1349,6 +1414,8 @@
       const theme = document.documentElement.getAttribute('data-theme');
       $('s-theme-dark').classList.toggle('active', theme === 'dark');
       $('s-theme-light').classList.toggle('active', theme === 'light');
+      $('s-policy-overwrite').classList.toggle('active', _sPolicy === 'overwrite');
+      $('s-policy-keep').classList.toggle('active', _sPolicy === 'keep_both');
       $('s-error').textContent = '';
       renderProviderSelect();
       renderModelsList();
@@ -1434,7 +1501,11 @@
         const r = await fetch('/settings', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ PROVIDER: provider, MODELS: models }),
+          body: JSON.stringify({
+            PROVIDER: provider,
+            MODELS: models,
+            PIPELINE: { duplicate_policy: _sPolicy },
+          }),
         });
         if (!r.ok) {
           const err = await r.json().catch(() => ({}));
@@ -1453,6 +1524,8 @@
       $('s-save').addEventListener('click', saveSettings);
       $('s-theme-dark').addEventListener('click', () => { setTheme('dark');  renderSettingsForm(); });
       $('s-theme-light').addEventListener('click', () => { setTheme('light'); renderSettingsForm(); });
+      $('s-policy-overwrite').addEventListener('click', () => { _sPolicy = 'overwrite'; renderSettingsForm(); });
+      $('s-policy-keep').addEventListener('click', () => { _sPolicy = 'keep_both'; renderSettingsForm(); });
       $('s-provider').addEventListener('change', e => { _sProvider = e.target.value; renderModelsList(); });
       $('s-add-model').addEventListener('click', () => {
         _sModels.push({ key: '', value: '' });

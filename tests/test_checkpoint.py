@@ -190,7 +190,7 @@ class StubCritic:
         self._fn        = critique_fn or (lambda slides: _passing_critique(slides))
         self.call_count = 0
 
-    async def run(self, doc_map, slides) -> Critique:
+    async def run(self, doc_map, slides, **kwargs) -> Critique:
         self.call_count += 1
         return self._fn(slides)
 
@@ -265,6 +265,7 @@ async def _run_pipeline_async(tmp_dirs, checkpoint, agents):
         multi_deck_length_threshold=0,
         max_review_cycles=1,
         debug=False,
+        duplicate_policy="overwrite",
         checkpoint=checkpoint,
     )
 
@@ -488,7 +489,7 @@ class TestMultiDeckResume:
         class TrackingPlanner:
             provider = _DummyProvider()
 
-            async def run(self, doc_map, skeleton, chunk_images=None, figure_purposes=None, scope=None):
+            async def run(self, doc_map, skeleton, figure_catalog=None, scope=None):
                 if scope:
                     planner_call_log.append(scope.heading)
                 return _slide_plan()

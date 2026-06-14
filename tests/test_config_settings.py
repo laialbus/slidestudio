@@ -124,3 +124,43 @@ class TestInvalidProviderInSettingsFile:
         with pytest.raises(SystemExit) as exc_info:
             importlib.reload(config)
         assert "google" in str(exc_info.value)
+
+
+class TestPipelineOverrides:
+    def test_duplicate_policy_default_is_overwrite(self):
+        importlib.reload(config)
+        assert config.PIPELINE["duplicate_policy"] == "overwrite"
+
+    def test_settings_file_overrides_duplicate_policy(self):
+        _SETTINGS_PATH.write_text(
+            json.dumps({"PIPELINE": {"duplicate_policy": "keep_both"}}),
+            encoding="utf-8",
+        )
+        importlib.reload(config)
+        assert config.PIPELINE["duplicate_policy"] == "keep_both"
+
+    def test_other_pipeline_keys_keep_defaults_after_override(self):
+        _SETTINGS_PATH.write_text(
+            json.dumps({"PIPELINE": {"duplicate_policy": "keep_both"}}),
+            encoding="utf-8",
+        )
+        importlib.reload(config)
+        assert config.PIPELINE["max_review_cycles"] == 3
+
+    def test_unknown_pipeline_key_raises_system_exit(self):
+        _SETTINGS_PATH.write_text(
+            json.dumps({"PIPELINE": {"not_a_real_key": 1}}),
+            encoding="utf-8",
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            importlib.reload(config)
+        assert "not_a_real_key" in str(exc_info.value)
+
+    def test_invalid_duplicate_policy_raises_system_exit(self):
+        _SETTINGS_PATH.write_text(
+            json.dumps({"PIPELINE": {"duplicate_policy": "sometimes"}}),
+            encoding="utf-8",
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            importlib.reload(config)
+        assert "duplicate_policy" in str(exc_info.value)

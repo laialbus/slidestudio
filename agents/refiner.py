@@ -4,7 +4,7 @@ from schemas.critique import Critique
 from schemas.document_map import DocumentMap
 from schemas.slides_draft import DraftSlide, SlidesDraft
 
-from agents.base import BaseAgent
+from agents.base import BaseAgent, format_source_chunks
 
 
 class RefinerAgent(BaseAgent):
@@ -17,6 +17,8 @@ class RefinerAgent(BaseAgent):
         slides: SlidesDraft,
         critique: Critique,
         deck_feedback: str | None = None,
+        chunks: list[str] | None = None,
+        slide_chunks: dict[int, list[int]] | None = None,
     ) -> SlidesDraft:
         failed = critique.failed_slides
         if not failed:
@@ -33,12 +35,22 @@ class RefinerAgent(BaseAgent):
             slides=flagged_slides,
         ).model_dump_json(indent=2)
 
+        # Only the flagged slides are rewritten, so only their source chunks
+        # are needed — this gives the Refiner raw material to deepen content
+        # rather than merely rephrase it.
+        source_chunks = format_source_chunks(
+            chunks or [],
+            slide_chunks or {},
+            slide_indices=sorted(failed_indices),
+        )
+
         prompt = Template(self.prompt_template).safe_substitute(
             doc_map=doc_map.model_dump_json(indent=2),
             all_slides=slides.model_dump_json(indent=2),
             deck_feedback=deck_feedback or "none",
             flagged_slides=flagged_json,
             critiques=critiques_text,
+            source_chunks=source_chunks,
         )
         corrected: SlidesDraft = await self._call(prompt, SlidesDraft)
 

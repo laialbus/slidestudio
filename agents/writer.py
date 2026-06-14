@@ -77,11 +77,11 @@ class WriterAgent(BaseAgent):
         )
         draft = await self._call(prompt, SlidesDraft)
 
-        # Overwrite image_ref from the pre-assigned PlannedSlide values so the
+        # Overwrite image_refs from the validated PlannedSlide values so the
         # LLM cannot pick the wrong figure or reuse one from another slide.
-        planned_refs = {s.index: s.image_ref for s in batch}
+        planned_refs = {s.index: s.figure_ids for s in batch}
         corrected = [
-            slide.model_copy(update={"image_ref": planned_refs.get(slide.index)})
+            slide.model_copy(update={"image_refs": planned_refs.get(slide.index, [])})
             for slide in draft.slides
         ]
         return SlidesDraft(title=draft.title, slides=corrected)

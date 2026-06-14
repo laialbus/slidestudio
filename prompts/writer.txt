@@ -31,7 +31,7 @@ For each slide in the batch plan, produce a DraftSlide. Return a SlidesDraft JSO
   - latex: (optional) a verbatim LaTeX string if a formula is central to this slide's
     claim. Copy the LaTeX expression exactly from the source text — never paraphrase
     or reconstruct equations from memory. Omit this field (null) if no formula applies.
-  - image_ref: always null — image assignment is managed automatically by the pipeline.
+  - image_refs: always an empty list [] — figure assignment is managed automatically by the pipeline.
 
 The difference between an acceptable body and a good one:
   Acceptable: "The Transformer uses self-attention instead of recurrence."

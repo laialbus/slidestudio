@@ -5,6 +5,37 @@ from pydantic import BaseModel
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 
+def format_source_chunks(
+    chunks: list[str],
+    slide_chunks: dict[int, list[int]],
+    slide_indices: list[int] | None = None,
+) -> str:
+    """
+    Render the raw source chunks backing a set of slides so a reviewer can
+    judge depth against the source, not just internal coherence.
+
+    Deduplicates chunks shared across slides and prefixes a slide→chunk map
+    so the reviewer knows which chunks ground each slide. When no chunks are
+    available (e.g. the caller did not thread them through), returns a clear
+    sentinel rather than an empty string so the prompt stays well-formed.
+    """
+    if slide_indices is None:
+        slide_indices = sorted(slide_chunks)
+
+    mapping = {i: slide_chunks.get(i, []) for i in slide_indices}
+    needed = sorted({
+        c for ids in mapping.values() for c in ids if 0 <= c < len(chunks)
+    })
+    if not needed:
+        return "(no source chunks available)"
+
+    map_line = "; ".join(
+        f"slide {i} → chunks {mapping[i]}" for i in slide_indices if mapping[i]
+    )
+    blocks = "\n\n---\n\n".join(f"[Chunk {c}]\n{chunks[c]}" for c in needed)
+    return f"Slide-to-chunk map: {map_line}\n\n{blocks}"
+
+
 class BaseAgent:
     name: str = "base"
     output_schema: type[BaseModel] | None = None

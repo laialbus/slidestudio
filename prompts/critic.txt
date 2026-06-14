@@ -6,8 +6,21 @@ $doc_map
 Slides to Review:
 $slides
 
+Source Material (the raw text each slide was written from):
+$source_chunks
+
 The target reader is a college student encountering this material for the
 first time. Evaluate clarity from their perspective, not an expert's.
+
+Use the source material to judge DEPTH, not just internal coherence. For each
+slide, compare what it says against what its source chunks actually support:
+- If a slide asserts *what* is true but the source explains *why* or *how* (a
+  mechanism, cause, or reason) that the slide omits, flag it with issue type
+  "superficial" and name the missing mechanism in the detail field. Example:
+  "States that attention weights sum to 1 but omits the softmax normalization
+  the source describes as the cause."
+- Do not invent depth the source does not contain. "superficial" means the
+  slide is shallow *relative to its own source*, not relative to the field.
 
 Review slides strictly in index order. As you progress through the deck:
 - Maintain a running list of technical terms that have been explicitly defined
@@ -29,7 +42,7 @@ In addition to the per-slide SlideReview list, include a top-level field:
 - deck_feedback: one sentence naming the most important structural issue with
   the deck as a whole, or "none" if the arc is coherent and complete.
 
-Valid issue types: "inaccuracy", "clarity", "gap", "density", "heading_mismatch"
+Valid issue types: "inaccuracy", "clarity", "gap", "density", "heading_mismatch", "superficial"
 
 Return a JSON object matching the Critique schema:
 {

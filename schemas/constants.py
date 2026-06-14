@@ -16,3 +16,4 @@ SLIDE_BODY_MAX              = 1200   # ~4 sentences of self-contained prose expl
 DECK_TITLE_MAX              = 60     # short deck title shown in the viewer header
 PLANNED_SLIDE_ANNOTATION_MAX = 200   # per-slide planning notes (intention, emphasis)
 DECK_FEEDBACK_MAX           = 300    # overall deck-level feedback from the Critic
+MAX_FIGURES_PER_SLIDE       = 3      # most figures a single slide may request/carry (stacked)

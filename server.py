@@ -54,9 +54,14 @@ _ARCHIVE_DIR   = _OUTPUTS_DIR / "archive"
 _SETTINGS_PATH = _PROJECT_ROOT / "settings.json"
 
 
+# PIPELINE keys the web UI is allowed to override via settings.json.
+_SETTABLE_PIPELINE_KEYS = {"duplicate_policy": ("overwrite", "keep_both")}
+
+
 class _SettingsPayload(BaseModel):
     PROVIDER: str
     MODELS: dict[str, str]
+    PIPELINE: dict[str, str] = {}
 
 
 # ── Job state ─────────────────────────────────────────────────────────────────
@@ -180,6 +185,7 @@ async def _run_pipeline_job(job_id: str, pdf_path: Path) -> None:
             multi_deck_length_threshold=config.PIPELINE["multi_deck_length_threshold"],
             max_review_cycles=config.PIPELINE["max_review_cycles"],
             debug=config.PIPELINE["debug"],
+            duplicate_policy=config.PIPELINE["duplicate_policy"],
             checkpoint=ck,
             on_progress=progress_cb,
         )
@@ -315,7 +321,11 @@ def create_app() -> FastAPI:
 
     @app.get("/settings")
     async def get_settings():
-        return {"PROVIDER": config.PROVIDER, "MODELS": config.MODELS}
+        return {
+            "PROVIDER": config.PROVIDER,
+            "MODELS":   config.MODELS,
+            "PIPELINE": {key: config.PIPELINE[key] for key in _SETTABLE_PIPELINE_KEYS},
+        }
 
     @app.put("/settings")
     async def put_settings(payload: _SettingsPayload):
@@ -324,12 +334,23 @@ def create_app() -> FastAPI:
                 status_code=422,
                 detail=f"PROVIDER {payload.PROVIDER!r} must be a key in MODELS.",
             )
+        for key, value in payload.PIPELINE.items():
+            allowed = _SETTABLE_PIPELINE_KEYS.get(key)
+            if allowed is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"PIPELINE key {key!r} cannot be set from the web UI.",
+                )
+            if value not in allowed:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"PIPELINE.{key} must be one of {sorted(allowed)}.",
+                )
+        settings_data: dict = {"PROVIDER": payload.PROVIDER, "MODELS": payload.MODELS}
+        if payload.PIPELINE:
+            settings_data["PIPELINE"] = payload.PIPELINE
         _SETTINGS_PATH.write_text(
-            json.dumps(
-                {"PROVIDER": payload.PROVIDER, "MODELS": payload.MODELS},
-                indent=2,
-                ensure_ascii=False,
-            ),
+            json.dumps(settings_data, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
         importlib.reload(config)

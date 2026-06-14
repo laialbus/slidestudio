@@ -7,6 +7,14 @@ from pydantic import BaseModel
 from providers.base import BaseProvider, RateLimitError, ServerError
 from providers.config import ProviderConfig
 
+# Reasoning depth for Gemini flash calls. Flash defaults to little or no
+# thinking, which leaves the Writer/Critic/Refiner reasoning shallow. Gemini 3
+# controls this with a thinking *level* (an enum), not a token budget — passing
+# a token count to thinking_level is invalid. MEDIUM buys deeper reasoning at a
+# moderate cost. Internal provider tuning, so it stays local rather than in
+# config.py (per the coding standards).
+_THINKING_LEVEL = types.ThinkingLevel.MEDIUM
+
 
 class GoogleProvider(BaseProvider):
     def __init__(self, config: ProviderConfig, api_key: str):
@@ -28,12 +36,16 @@ class GoogleProvider(BaseProvider):
         ]
 
         client = genai.Client(api_key=self.api_key)
+        # response_schema (native structured output) is deliberately NOT set.
+        # Some agent schemas contain dict fields — e.g. ChunkMap.figure_purposes
+        # (dict[str, ...]) — which compile to JSON Schema `additionalProperties`,
+        # and the Gemini API rejects that construct ("additionalProperties is not
+        # supported"). response_mime_type + the BaseProvider format-retry loop
+        # already guarantee valid JSON for every schema, so we rely on that.
         cfg = types.GenerateContentConfig(
             system_instruction=system or "You are a helpful assistant. Return only valid JSON.",
             response_mime_type="application/json",
-            # response_schema=(
-            #     response_schema.model_json_schema() if response_schema else None
-            # ),
+            thinking_config=types.ThinkingConfig(thinking_level=_THINKING_LEVEL),
         )
 
         try:

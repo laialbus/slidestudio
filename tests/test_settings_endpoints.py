@@ -136,3 +136,46 @@ class TestPutSettings:
         c.put("/settings", json=self._payload())
         data = json.loads(path.read_text())
         assert isinstance(data, dict)
+
+
+class TestDuplicatePolicySetting:
+    def _payload(self, policy=None):
+        payload = {"PROVIDER": "anthropic", "MODELS": {"anthropic": "claude-sonnet-4-20250514"}}
+        if policy is not None:
+            payload["PIPELINE"] = {"duplicate_policy": policy}
+        return payload
+
+    def test_get_settings_includes_duplicate_policy(self, client):
+        c, _ = client
+        data = c.get("/settings").json()
+        assert data["PIPELINE"]["duplicate_policy"] == config.PIPELINE["duplicate_policy"]
+
+    def test_put_persists_duplicate_policy(self, client):
+        c, path = client
+        r = c.put("/settings", json=self._payload("keep_both"))
+        assert r.status_code == 200
+        saved = json.loads(path.read_text())
+        assert saved["PIPELINE"] == {"duplicate_policy": "keep_both"}
+
+    def test_put_without_pipeline_still_succeeds(self, client):
+        c, path = client
+        r = c.put("/settings", json=self._payload())
+        assert r.status_code == 200
+        assert "PIPELINE" not in json.loads(path.read_text())
+
+    def test_put_invalid_policy_value_returns_422(self, client):
+        c, _ = client
+        r = c.put("/settings", json=self._payload("sometimes"))
+        assert r.status_code == 422
+
+    def test_put_unknown_pipeline_key_returns_422(self, client):
+        c, _ = client
+        payload = self._payload()
+        payload["PIPELINE"] = {"max_review_cycles": "99"}
+        r = c.put("/settings", json=payload)
+        assert r.status_code == 422
+
+    def test_invalid_policy_leaves_settings_file_unwritten(self, client):
+        c, path = client
+        c.put("/settings", json=self._payload("sometimes"))
+        assert not path.exists()

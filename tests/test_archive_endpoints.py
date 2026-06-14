@@ -25,7 +25,7 @@ def _write_single_deck(path: Path, title: str = "Paper") -> None:
         "generated_at": "2026-05-01T10:00:00+00:00",
         "provider": "anthropic", "model": "claude-sonnet-4-6",
         "slides": [{"index": 1, "heading": "H", "body": "B.", "tag": "Key Concept",
-                    "latex": None, "image_ref": None}],
+                    "latex": None, "image_refs": []}],
         "images": [],
     }
     path.write_text(json.dumps(data), encoding="utf-8")
@@ -38,7 +38,7 @@ def _write_multi_deck(dir_path: Path, title: str = "Textbook") -> None:
         "generated_at": "2026-05-01T10:00:00+00:00",
         "provider": "anthropic", "model": "claude-sonnet-4-6",
         "slides": [{"index": 1, "heading": "H", "body": "B.", "tag": "Key Concept",
-                    "latex": None, "image_ref": None}],
+                    "latex": None, "image_refs": []}],
         "images": [],
     }
     (dir_path / "01_chapter.json").write_text(json.dumps(chapter), encoding="utf-8")

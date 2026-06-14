@@ -296,3 +296,49 @@ class TestRefinerMerge:
         assert slide_1.heading == "FIXED_ONE"
         assert slide_3.heading == "FIXED_THREE"
         assert len(result.slides) == 4
+
+
+# ──────────────────────────────────────────────────────────────
+# Tests — source chunks for flagged slides only
+# ──────────────────────────────────────────────────────────────
+
+class TestRefinerSourceChunks:
+    def _setup(self):
+        slides = SlidesDraft(
+            title="Test Deck",
+            slides=[_draft_slide(1), _draft_slide(2), _draft_slide(3)],
+        )
+        corrected = SlidesDraft(
+            title="Test Deck",
+            slides=[_draft_slide(2, heading="FIXED")],
+        )
+        stub = StubProvider({SlidesDraft: [corrected]})
+        agent = RefinerAgent(stub)
+        critique = _critique_with_failures(failed_indices=[2], total=3)
+        return agent, stub, slides, critique
+
+    def test_flagged_slide_source_chunk_in_prompt(self):
+        agent, stub, slides, critique = self._setup()
+        chunks = ["chunk zero", "FLAGGED_SOURCE_TEXT_NU", "chunk two"]
+        _run(agent.run(
+            _doc_map(), slides, critique,
+            chunks=chunks, slide_chunks={1: [0], 2: [1], 3: [2]},
+        ))
+        _, prompt = stub.received_prompts[0]
+        assert "FLAGGED_SOURCE_TEXT_NU" in prompt
+
+    def test_unflagged_slide_source_chunk_not_in_prompt(self):
+        agent, stub, slides, critique = self._setup()
+        chunks = ["UNFLAGGED_SOURCE_PSI", "flagged chunk", "UNFLAGGED_SOURCE_PHI"]
+        _run(agent.run(
+            _doc_map(), slides, critique,
+            chunks=chunks, slide_chunks={1: [0], 2: [1], 3: [2]},
+        ))
+        _, prompt = stub.received_prompts[0]
+        assert "UNFLAGGED_SOURCE_PSI" not in prompt
+        assert "UNFLAGGED_SOURCE_PHI" not in prompt
+
+    def test_runs_without_chunks(self):
+        agent, stub, slides, critique = self._setup()
+        result = _run(agent.run(_doc_map(), slides, critique))
+        assert isinstance(result, SlidesDraft)

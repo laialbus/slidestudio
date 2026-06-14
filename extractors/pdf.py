@@ -12,6 +12,7 @@ from extractors.layout import (
     LayoutAnalyser,
     _CAPTION_LABELS,
     _FIGURE_LABELS,
+    _merge_figure_regions,
     _pair_figures_captions,
 )
 
@@ -25,6 +26,7 @@ _MAX_IMAGE_BYTES       = 1 * 1_024 * 1_024  # 1 MB — cap rendered figure size
 _FIGURE_SEARCH_WINDOW  = 500              # pt — vertical scan window from caption edge
 _HAIRLINE_MAX_HEIGHT   = 2.0              # pt — stroke-only paths below this are decorative
 _CAPTION_PADDING       = 3.0              # pt — safety margin around rendered figure rect
+_SURYA_FIGURE_PADDING  = 8.0              # pt — Surya bboxes are tight; pad before render to keep axis labels/edges
 _CAPTION_MERGE_GAP     = 8.0              # pt — max y-gap to absorb continuation caption blocks
 _DRAWING_OVERLAP_FRAC  = 0.4              # drawings must x-overlap caption by this fraction
 _RENDER_DPI            = 200
@@ -338,6 +340,10 @@ def _extract_images(doc, analyser: LayoutAnalyser | None = None) -> list[ImageRe
             figures  = [r for r in regions if r.label in _FIGURE_LABELS]
             captions = [r for r in regions if r.label in _CAPTION_LABELS]
 
+            # Fuse multi-panel composites into one region before pairing so the
+            # caption matches the whole figure, not a single sub-panel.
+            figures = _merge_figure_regions(figures)
+
             matched_pairs, unmatched_caps = _pair_figures_captions(figures, captions)
 
             for fig_region, cap_region in matched_pairs:
@@ -345,7 +351,17 @@ def _extract_images(doc, analyser: LayoutAnalyser | None = None) -> list[ImageRe
                     _extract_text_in_rect(blocks, cap_region.bbox)
                     if cap_region is not None else ""
                 )
-                raw = _render_figure(page, fig_region.bbox)
+                # A figure with no caption is unreferenceable (the Planner picks
+                # figures from the captioned catalog), so skip it rather than
+                # spend bytes encoding dead weight.
+                if not caption_text.strip():
+                    continue
+                # Surya bboxes are tight — pad before rendering so axis labels
+                # and panel edges are not clipped, then clamp to the page.
+                fig_rect = _pad_and_clip(
+                    fig_region.bbox, _SURYA_FIGURE_PADDING, page.rect
+                )
+                raw = _render_figure(page, fig_rect)
                 if raw is None:
                     continue
                 b64 = base64.b64encode(raw).decode("ascii")
@@ -720,6 +736,19 @@ def _is_blank_pixmap(pix: pymupdf.Pixmap) -> bool:
             if samples[i + c] < _BLANK_MIN_CHANNEL_VALUE:
                 return False
     return True
+
+
+def _pad_and_clip(
+    rect: pymupdf.Rect, padding: float, page_rect: pymupdf.Rect
+) -> pymupdf.Rect:
+    """Expand rect by padding on all sides, clamped to the page rectangle."""
+    padded = pymupdf.Rect(
+        rect.x0 - padding,
+        rect.y0 - padding,
+        rect.x1 + padding,
+        rect.y1 + padding,
+    )
+    return padded & page_rect
 
 
 def _render_figure(page, figure_rect: pymupdf.Rect) -> bytes | None:

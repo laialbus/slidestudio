@@ -84,6 +84,14 @@ class TestCritiqueProperties:
         c = Critique(slides=[review])
         assert c.failed_slides[0].issues[0].type == "inaccuracy"
 
+    def test_superficial_is_valid_issue_type(self):
+        issue = Issue(type="superficial", detail="States what but not why.")
+        assert issue.type == "superficial"
+
+    def test_unknown_issue_type_rejected(self):
+        with pytest.raises(ValidationError):
+            Issue(type="not_a_real_type", detail="x")
+
 
 # ──────────────────────────────────────────────────────────────
 # GlobalSkeleton field constraints
@@ -350,24 +358,24 @@ class TestDeckOutput:
         assert out.provider == "google"
         assert out.model == "gemini-2.0-flash"
 
-    def test_slide_latex_and_image_ref_accepted(self):
+    def test_slide_latex_and_image_refs_accepted(self):
         slide = FinalSlide(
             index=1, heading="Equations", body="Body.",
-            tag="Key Concept", latex=r"\alpha + \beta = \gamma", image_ref=0,
+            tag="Key Concept", latex=r"\alpha + \beta = \gamma", image_refs=[0, 2],
         )
         out = self._deck(title="T", slides=[slide])
         assert out.slides[0].latex is not None
-        assert out.slides[0].image_ref == 0
+        assert out.slides[0].image_refs == [0, 2]
 
     def test_slide_latex_optional_null(self):
         slide = FinalSlide(index=1, heading="H", body="B.", tag="Definition")
         assert slide.latex is None
-        assert slide.image_ref is None
+        assert slide.image_refs == []
 
-    def test_draft_slide_accepts_latex_and_image_ref(self):
+    def test_draft_slide_accepts_latex_and_image_refs(self):
         draft = DraftSlide(
             index=1, heading="H", body="B.", tag="Key Concept",
-            latex=r"\sum_{i=0}^{n} x_i", image_ref=2,
+            latex=r"\sum_{i=0}^{n} x_i", image_refs=[2],
         )
         assert draft.latex == r"\sum_{i=0}^{n} x_i"
-        assert draft.image_ref == 2
+        assert draft.image_refs == [2]

@@ -71,6 +71,7 @@ class TestRouteMultiDeckDelegation:
                 "Test Paper", skeleton, _doc_map(), ["chunk"], [],
                 _make_agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
                 total_chars=50_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
+                duplicate_policy="overwrite",
             ))
         assert isinstance(result, DeckIndex)
 
@@ -82,6 +83,7 @@ class TestRouteMultiDeckDelegation:
                 "Test Paper", skeleton, _doc_map(), ["chunk"], [],
                 _make_agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
                 total_chars=50_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
+                duplicate_policy="overwrite",
             ))
         assert isinstance(result, SlidesFinal)
 

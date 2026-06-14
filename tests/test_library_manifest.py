@@ -42,7 +42,7 @@ def _write_single_deck(path: Path, title: str, generated_at: str = "2026-05-01T1
         "model":        "claude-sonnet-4-6",
         "slides": [
             {"index": 1, "heading": "H", "body": "B.", "tag": "Key Concept",
-             "latex": None, "image_ref": None}
+             "latex": None, "image_refs": []}
         ],
         "images": [],
     }
@@ -67,7 +67,7 @@ def _write_multi_deck(
             "model":        "claude-sonnet-4-6",
             "slides": [
                 {"index": 1, "heading": "H", "body": "B.", "tag": "Key Concept",
-                 "latex": None, "image_ref": None}
+                 "latex": None, "image_refs": []}
             ],
             "images": [],
         }

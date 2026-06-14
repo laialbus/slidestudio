@@ -12,8 +12,17 @@ $deck_feedback
 Flagged Slides (rewrite these only):
 $flagged_slides
 
+Source Material for the flagged slides (the raw text they were written from):
+$source_chunks
+
 Issues to Fix:
 $critiques
+
+When fixing a "superficial" issue, mine the source material above for the
+mechanism, cause, or reason the slide is missing and fold it into the body.
+Add genuine explanatory substance grounded in the source — do not merely
+restate the existing claim in new words. Stay within the source: do not
+introduce facts the source chunks do not support.
 
 When fixing a "clarity" issue caused by an undefined term, check whether
 the term was defined in an earlier slide in the full deck. If so, reference

@@ -6,7 +6,9 @@ from schemas.constants import DECK_FEEDBACK_MAX
 
 
 class Issue(BaseModel):
-    type:   Literal["inaccuracy", "clarity", "gap", "density", "heading_mismatch"]
+    type:   Literal[
+        "inaccuracy", "clarity", "gap", "density", "heading_mismatch", "superficial"
+    ]
     detail: str
 
 

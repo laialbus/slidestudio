@@ -302,6 +302,7 @@ async def _run_pipeline(
         multi_deck_length_threshold=config.PIPELINE["multi_deck_length_threshold"],
         max_review_cycles=max_review_cycles,
         debug=debug,
+        duplicate_policy=config.PIPELINE["duplicate_policy"],
         checkpoint=checkpoint,
         on_progress=on_progress,
     )
