@@ -85,6 +85,7 @@ slidestudio/
 │   ├── rate_limiter.py       # asyncio.Semaphore — provider-aware concurrency cap
 │   ├── cost_estimator.py     # Token counting and cost table for --estimate flag
 │   ├── slugify.py            # Filesystem-safe string sanitiser for filenames and folders
+│   ├── pdf_hash.py           # Content SHA-256 of a PDF — document identity for naming + cache
 │   ├── checkpoint.py         # Resumable runs — save/restore pipeline stage state
 │   └── library.py            # Rebuild and upsert entries in outputs/library.json
 │
@@ -149,8 +150,8 @@ slidestudio/
 - `config.py` loads `settings.json` from the project root if present, replacing `PROVIDER` and `MODELS` with the overrides. Malformed JSON or an unknown provider key causes an immediate `sys.exit` with a clear error message.
 - `providers/config.py` holds `ProviderConfig` — all provider tunables (timeouts, retry counts, backoff bounds, circuit-breaker thresholds) are injected rather than read from `config.py` inside the provider.
 - `providers/errors.py` defines `CircuitOpenError` and `FatalAPIError`, which the pipeline catches separately from transient errors.
-- `utils/checkpoint.py` enables `--resume`: each pipeline stage writes its output to `.checkpoints/` keyed by a hash of (PDF content + model + chunk size); a resumed run skips already-completed stages.
-- `utils/library.py` maintains `outputs/library.json` — every `run` upserts its entry; archive/unarchive calls trigger a rebuild.
+- `utils/checkpoint.py` enables resume: each pipeline stage writes its output to `.checkpoints/<run_key>/` keyed by `Checkpoint.compute_key` = a hash of (PDF **content** via `pdf_content_hash` + model + chunk size); a resumed run skips already-completed stages. Content-keying means a renamed or re-saved-but-identical PDF reuses its cache. Both entry points run fresh by default (CLI without `--resume`, web upload with `resume=False`); a *failed* run leaves its stage cache behind, so the CLI `--resume` flag or the web UI's **Resume** button (`POST /resume/{job_id}`) can continue from the last completed stage. On a **successful** run the entry point calls `Checkpoint.clear()` to delete the run's stage cache — it exists only to resume an interrupted run, so a later re-run of the same PDF regenerates from scratch rather than short-circuiting to the finished deck. (cli.py re-pins `output_path.txt` afterwards so `serve` can still locate the output.)
+- `utils/library.py` maintains `outputs/library.json` — every entry stores the document's `doc_hash`, and `run` upserts its entry (deduped by file path); archive/unarchive calls trigger a rebuild. The manifest is the source of truth for overwrite cleanup: `_cleanup_stale_output` reads it, deletes the files of entries whose stored `doc_hash` matches (single-deck file, or the whole directory for a multi-deck index), and `remove_library_entries_for_hash` prunes those entries — all by the stored field, never by parsing filenames (archived entries preserved). Both run in `route()` *after* the new deck is written, excluding it — so an overwrite is crash-safe (a failure mid-generation leaves the prior deck and its entry intact), and the manifest never points at a file cleanup just deleted. Cleanup runs on every successful overwrite, resumed or not: post-write exclusion makes it safe, and a resume only ever continues a failed run (which never wrote a final deck), so there is no in-progress deck to protect. (Tradeoff: an orphan output absent from the manifest isn't auto-cleaned — `library-refresh` is the repair path.)
 - `schemas/slide_plan.py` — `PlannedSlide.chunk_indices` is bounded at `max_length=3` to prevent unbounded context injection into the Writer.
 - `extractors/pdf.py` uses Surya for layout analysis when available, falling back to PyMuPDF heuristics for header detection.
 - `agents/writer.py` generates slides in fixed-size batches to stay within output token limits.
@@ -1592,26 +1593,35 @@ def slugify(text: str, max_length: int = 80) -> str:
     return text[:max_length]
 ```
 
-`slugify()` is called in two places in `pipeline.py`:
+Output names are built from the **source PDF**, not the LLM-extracted title.
+`run()` computes a content-keyed stem once and threads it through the writers:
 
 ```python
-# pipeline.py  (output path construction)
+# pipeline.py  (output identity)
 
+from utils.pdf_hash import pdf_content_hash   # raw-bytes SHA-256
 from utils.slugify import slugify
 
-def build_output_dir(pdf_title: str) -> Path:
-    """Single-deck: outputs/<slug>.json
-       Multi-deck:  outputs/<slug>/"""
-    return Path("outputs") / slugify(pdf_title)
+doc_hash    = pdf_content_hash(file_path)            # 8-hex content digest
+name_slug   = slugify(Path(file_path).stem) or "untitled_document"
+output_stem = f"{name_slug}_{doc_hash}"              # readable + content identity
 
-def build_deck_filename(chapter_index: int, chapter_heading: str) -> str:
-    """e.g. 03_cellular_respiration.json"""
-    return f"{chapter_index:02d}_{slugify(chapter_heading)}.json"
+# Single-deck: outputs/<stem>_<timestamp>.json
+# Multi-deck:  outputs/<stem>_<timestamp>/NN_<slugify(chapter)>.json
 ```
 
-These are the only two locations that construct output paths. No other part of
-the codebase produces filenames — making the sanitisation surface minimal and
-easy to audit.
+The `doc_hash` is the document's identity: two byte-identical PDFs hash the
+same regardless of filename or extracted title — fixing a bug where an empty
+title fell back to `untitled_document` and left the stale output uncleaned. It
+is stored as a **first-class field** on `DeckOutput`/`DeckIndex` (and copied
+into each `library.json` entry); `_cleanup_stale_output()` and
+`remove_library_entries_for_hash()` match on that stored field, **never** by
+parsing the filename. The hash also appears in the filename, but only as a
+cosmetic/grep aid — nothing reads it back, so the naming scheme can change
+freely. `slugify()` still sanitises the filename stem and each chapter heading;
+the *display* title is carried separately from `SlidesFinal.title`. These are
+the only locations that construct output paths, keeping the sanitisation surface
+minimal and easy to audit.
 
 ---
 

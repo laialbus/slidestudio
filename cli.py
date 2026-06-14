@@ -204,6 +204,9 @@ def run(
         raise typer.Exit(code=1)
 
     if output_path is not None:
+        # Run completed — drop the resumable stage cache, then re-pin the output
+        # pointer so `serve` can still find the deck without re-running.
+        checkpoint.clear()
         checkpoint.save_output_path(output_path)
 
     if issues:

@@ -162,12 +162,18 @@ Documents with **3 or fewer chapters** produce a single JSON file:
 ```
 outputs/
 ├── library.json                    ← auto-maintained library index
-└── attention_is_all_you_need_20260609T142755.json
+└── attention_is_all_you_need_3f9a2b7c_20260609T142755.json
 ```
 
-Filenames are `{slug}_{YYYYMMDDTHHMMSS}.json` — a slugified title plus the UTC
-generation timestamp, so re-running a paper never reuses an existing path.
-Open with `--open` to view the scrollable slide reel.
+Filenames are `{filename}_{hash}_{YYYYMMDDTHHMMSS}.json` — the source PDF's
+filename, a short hash of its **content**, and the UTC generation timestamp.
+The content hash is the document's identity: it is how the overwrite policy
+recognises a re-run of the same paper regardless of how its title was extracted
+or whether the file was renamed (see *Regenerating the same paper*). That
+identity is stored as a field inside each deck JSON and in `library.json` — the
+hash in the filename is just a human/grep convenience and is never parsed back,
+so the naming scheme can change without affecting behaviour. The timestamp keeps
+successive runs distinct. Open with `--open` to view the scrollable slide reel.
 
 ### Multi-deck (long documents)
 
@@ -176,7 +182,7 @@ Documents with **more than 3 chapters** produce one deck per chapter plus an ind
 ```
 outputs/
 ├── library.json                    ← auto-maintained library index
-└── biology_101_textbook_20260609T142755/
+└── biology_101_textbook_8c1d4e0a_20260609T142755/
     ├── index.json              ← table of contents
     ├── 01_introduction.json
     ├── 02_cell_structure.json
@@ -193,8 +199,10 @@ Every `run` automatically upserts an entry into `outputs/library.json` — a fla
 
 `PIPELINE["duplicate_policy"]` in `config.py` (also settable from the web UI settings panel) controls what happens when you regenerate a paper whose slides already exist in `outputs/`:
 
-- `"overwrite"` (default) — older outputs for the same title are deleted before the new one is written. Archived copies are never touched.
+- `"overwrite"` (default) — older outputs for the same PDF are deleted, and their stale `library.json` entries pruned, **after** the new deck is written, so a crash mid-generation never destroys the prior deck without producing a replacement. "Same PDF" is matched by a hash of the file's **content**, not its title or filename, so a re-run overwrites even if the extracted title drifted or the source file was renamed. Archived copies are never touched.
 - `"keep_both"` — every generation is kept side by side; the timestamp in the filename keeps them distinct.
+
+If a run fails partway, its completed stages are cached. In the **web UI** a failed generation shows a **Resume** button that continues from the last completed stage (the CLI equivalent is `--resume`). A resumed run that succeeds overwrites the prior deck just like a fresh one — cleanup always runs after a successful write, never before. A successful run clears its own stage cache, so a later regeneration of the same PDF always starts fresh.
 
 ---
 

@@ -442,6 +442,9 @@
       transition: color 0.3s ease;
     }
     .gen-reset:hover { color: var(--text); }
+    .gen-actions { display: flex; gap: 18px; align-items: center; }
+    .gen-resume { color: var(--accent); }
+    .gen-resume:hover { color: var(--accent); opacity: 0.75; }
     .gen-stages { list-style: none; }
     .gen-stage {
       display: flex;
@@ -664,7 +667,10 @@
       <div class="gen-panel hidden" id="gen-panel">
         <div class="gen-header">
           <span class="gen-filename" id="gen-filename"></span>
-          <button class="gen-reset" id="gen-reset">Start over</button>
+          <span class="gen-actions">
+            <button class="gen-reset gen-resume hidden" id="gen-resume">Resume</button>
+            <button class="gen-reset" id="gen-reset">Start over</button>
+          </span>
         </div>
         <ul class="gen-stages" id="gen-stages"></ul>
         <p class="gen-error hidden" id="gen-error"></p>
@@ -786,6 +792,7 @@
     let fromToc                = false;
     let currentTocFile         = FILE;
     let _pollTimer             = null;
+    let _currentJobId          = null;
 
     const STAGE_LABELS = {
       extract: 'Extracting text',
@@ -1265,6 +1272,7 @@
       });
 
       $('gen-reset').addEventListener('click', resetUploadZone);
+      $('gen-resume').addEventListener('click', resumeJob);
     }
 
     function showUploadView() {
@@ -1308,6 +1316,7 @@
       $('gen-panel').classList.remove('hidden');
       $('gen-filename').textContent = filename;
       $('gen-error').classList.add('hidden');
+      $('gen-resume').classList.add('hidden');
       renderStages({});
     }
 
@@ -1339,6 +1348,7 @@
     }
 
     function pollJob(jobId) {
+      _currentJobId = jobId;
       _pollTimer = setInterval(async () => {
         let data;
         try {
@@ -1385,11 +1395,33 @@
     function showGenError(msg) {
       $('gen-error').textContent = msg;
       $('gen-error').classList.remove('hidden');
+      // Offer to resume from the last completed stage instead of restarting.
+      $('gen-resume').classList.toggle('hidden', !_currentJobId);
+    }
+
+    async function resumeJob() {
+      if (!_currentJobId) return;
+      const jobId = _currentJobId;
+      $('gen-resume').classList.add('hidden');
+      $('gen-error').classList.add('hidden');
+      try {
+        const r = await fetch('/resume/' + jobId, { method: 'POST' });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.detail || 'Resume failed');
+        }
+      } catch (e) {
+        showGenError(e.message);
+        return;
+      }
+      pollJob(jobId);
     }
 
     function resetUploadZone() {
       if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+      _currentJobId = null;
       $('gen-panel').classList.add('hidden');
+      $('gen-resume').classList.add('hidden');
       $('upload-zone').classList.remove('hidden');
       $('file-input').value = '';
     }

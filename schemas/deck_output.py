@@ -21,5 +21,6 @@ class DeckOutput(BaseModel):
     generated_at: str
     provider:     str
     model:        str
+    doc_hash:     str            = ""   # PDF content hash — the document's identity
     slides:       list[FinalSlide]
     images:       list[ImageEntry] = []

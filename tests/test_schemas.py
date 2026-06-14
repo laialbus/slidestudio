@@ -367,6 +367,11 @@ class TestDeckOutput:
         assert out.slides[0].latex is not None
         assert out.slides[0].image_refs == [0, 2]
 
+    def test_doc_hash_defaults_empty_and_round_trips(self):
+        assert self._deck().doc_hash == ""
+        out = self._deck(doc_hash="3f9a2b7c")
+        assert DeckOutput.model_validate_json(out.model_dump_json()).doc_hash == "3f9a2b7c"
+
     def test_slide_latex_optional_null(self):
         slide = FinalSlide(index=1, heading="H", body="B.", tag="Definition")
         assert slide.latex is None

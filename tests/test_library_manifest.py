@@ -9,7 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from utils.library import rebuild_library_manifest, upsert_library_manifest
+from utils.library import (
+    rebuild_library_manifest,
+    remove_library_entries_for_hash,
+    upsert_library_manifest,
+)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -20,6 +24,7 @@ def _entry(
     title="Paper A",
     file_key="outputs/paper_a.json",
     generated_at="2026-05-01T10:00:00+00:00",
+    doc_hash="",
 ) -> dict:
     return {
         "title":        title,
@@ -28,6 +33,7 @@ def _entry(
         "generated_at": generated_at,
         "provider":     "anthropic",
         "model":        "claude-sonnet-4-6",
+        "doc_hash":     doc_hash,
         "slide_count":  10,
         "deck_count":   1,
     }
@@ -82,6 +88,81 @@ def _write_multi_deck(
         "decks":        decks,
     }
     (dir_path / "index.json").write_text(json.dumps(index), encoding="utf-8")
+
+
+# ──────────────────────────────────────────────────────────────
+# remove_library_entries_for_hash
+# ──────────────────────────────────────────────────────────────
+
+class TestRemoveLibraryEntriesForHash:
+    _HASH = "3f9a2b7c"
+
+    def _seed(self, tmp_path, entries):
+        (tmp_path / "library.json").write_text(json.dumps(entries), encoding="utf-8")
+
+    def _read(self, tmp_path):
+        return json.loads((tmp_path / "library.json").read_text())
+
+    def test_removes_entry_with_matching_hash(self, tmp_path):
+        self._seed(tmp_path, [_entry(doc_hash=self._HASH)])
+        remove_library_entries_for_hash(tmp_path, self._HASH)
+        assert self._read(tmp_path) == []
+
+    def test_removes_only_matching_hash(self, tmp_path):
+        keep = _entry(title="Other", file_key="/outputs/other.json", doc_hash="cafebabe")
+        self._seed(tmp_path, [_entry(doc_hash=self._HASH), keep])
+        remove_library_entries_for_hash(tmp_path, self._HASH)
+        assert self._read(tmp_path) == [keep]
+
+    def test_matches_regardless_of_filename(self, tmp_path):
+        # Identity is the stored field, so the filename prefix is irrelevant —
+        # a renamed PDF (different name, same content hash) is the same document.
+        self._seed(tmp_path, [
+            _entry(file_key="/outputs/alpha_x_20260101T000000.json", doc_hash=self._HASH),
+            _entry(file_key="/outputs/beta_y_20260102T000000.json", doc_hash=self._HASH),
+        ])
+        remove_library_entries_for_hash(tmp_path, self._HASH)
+        assert self._read(tmp_path) == []
+
+    def test_matches_multi_deck_entry(self, tmp_path):
+        self._seed(tmp_path, [
+            {**_entry(file_key="/outputs/book/index.json", doc_hash=self._HASH),
+             "type": "multi_deck"},
+        ])
+        remove_library_entries_for_hash(tmp_path, self._HASH)
+        assert self._read(tmp_path) == []
+
+    def test_preserves_archived_entry_with_same_hash(self, tmp_path):
+        archived = {**_entry(file_key="/outputs/archive/paper.json", doc_hash=self._HASH),
+                    "archived": True}
+        self._seed(tmp_path, [_entry(doc_hash=self._HASH), archived])
+        remove_library_entries_for_hash(tmp_path, self._HASH)
+        assert self._read(tmp_path) == [archived]
+
+    def test_keep_file_is_preserved(self, tmp_path):
+        keep = "/outputs/paper_new.json"
+        self._seed(tmp_path, [
+            _entry(file_key="/outputs/paper_old.json", doc_hash=self._HASH),
+            _entry(file_key=keep, doc_hash=self._HASH),
+        ])
+        remove_library_entries_for_hash(tmp_path, self._HASH, keep_file=keep)
+        assert [e["file"] for e in self._read(tmp_path)] == [keep]
+
+    def test_entry_without_hash_is_never_matched(self, tmp_path):
+        # Legacy entries (no doc_hash) are not recognised as any document.
+        seed = [_entry(file_key="/outputs/legacy.json")]   # doc_hash=""
+        self._seed(tmp_path, seed)
+        remove_library_entries_for_hash(tmp_path, self._HASH)
+        assert self._read(tmp_path) == seed
+
+    def test_empty_hash_is_a_no_op(self, tmp_path):
+        seed = [_entry(doc_hash=self._HASH)]
+        self._seed(tmp_path, seed)
+        remove_library_entries_for_hash(tmp_path, "")
+        assert self._read(tmp_path) == seed
+
+    def test_missing_manifest_is_a_no_op(self, tmp_path):
+        remove_library_entries_for_hash(tmp_path, self._HASH)  # must not raise
 
 
 # ──────────────────────────────────────────────────────────────

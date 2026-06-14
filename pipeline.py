@@ -1,5 +1,5 @@
 import asyncio
-import re
+import json
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,7 +16,8 @@ from schemas.slides_draft import SlidesDraft
 from schemas.slides_final import FinalSlide, SlidesFinal
 from utils.checkpoint import Checkpoint
 from utils.cost_estimator import analyze_pdf_cost
-from utils.library import upsert_library_manifest
+from utils.library import remove_library_entries_for_hash, upsert_library_manifest
+from utils.pdf_hash import pdf_content_hash
 from utils.slugify import slugify
 
 
@@ -117,6 +118,7 @@ def _build_deck_output(
     generated_at: str,
     provider: str,
     model: str,
+    doc_hash: str = "",
 ) -> DeckOutput:
     """Build a DeckOutput, filtering images to only those referenced by the slides."""
     referenced_ids = {
@@ -138,6 +140,7 @@ def _build_deck_output(
         generated_at=generated_at,
         provider=provider,
         model=model,
+        doc_hash=doc_hash,
         slides=slides_final.slides,
         images=deck_images,
     )
@@ -152,17 +155,23 @@ def write_output(
     intermediates: dict,
     provider: str,
     model: str,
+    output_stem: str | None = None,
+    doc_hash: str = "",
 ) -> Path:
+    # output_stem is the content-keyed file stem ({filename}_{hash}) computed by
+    # run(); None falls back to the display title (used by direct unit tests).
+    # The hash in the stem is cosmetic — identity is the stored doc_hash field.
     generated = datetime.now(timezone.utc)
     now = generated.isoformat()
-    slug = _output_slug(title)
+    stem = output_stem or _output_slug(title)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = _unique_output_path(
-        out_dir, slug, generated.strftime("%Y%m%dT%H%M%S"), suffix=".json"
+        out_dir, stem, generated.strftime("%Y%m%dT%H%M%S"), suffix=".json"
     )
     deck_output = _build_deck_output(
-        slides_final, all_images, generated_at=now, provider=provider, model=model
+        slides_final, all_images, generated_at=now,
+        provider=provider, model=model, doc_hash=doc_hash,
     )
     output_path.write_text(deck_output.model_dump_json(indent=2), encoding="utf-8")
     upsert_library_manifest(out_dir, {
@@ -172,6 +181,7 @@ def write_output(
         "generated_at": now,
         "provider":     provider,
         "model":        model,
+        "doc_hash":     doc_hash,
         "slide_count":  len(deck_output.slides),
         "deck_count":   1,
     })
@@ -195,6 +205,8 @@ async def run_single_deck(
     checkpoint: Checkpoint | None = None,
     _write: bool = True,
     on_progress: ProgressCallback = None,
+    output_stem: str | None = None,
+    doc_hash: str = "",
 ) -> tuple[SlidesFinal, list[str], Path | None]:
     """
     Runs the planner→writer→critic/refiner loop for one deck.
@@ -217,6 +229,7 @@ async def run_single_deck(
                 slides_final_cp, images, title, debug, output_dir, {},
                 provider=agents["planner"].provider.name,
                 model=agents["planner"].provider.model,
+                output_stem=output_stem, doc_hash=doc_hash,
             ) if _write else None
             return slides_final_cp, [], output_path
 
@@ -299,6 +312,7 @@ async def run_single_deck(
             slides_final, images, title, debug, output_dir, intermediates,
             provider=agents["planner"].provider.name,
             model=agents["planner"].provider.model,
+            output_stem=output_stem, doc_hash=doc_hash,
         )
     else:
         if debug:
@@ -314,12 +328,14 @@ def write_deck_index(
     images: list[dict],
     agents: dict,
     output_dir: Path | str,
+    output_stem: str | None = None,
+    doc_hash: str = "",
 ) -> tuple[DeckIndex, Path]:
     generated = datetime.now(timezone.utc)
     now = generated.isoformat()
-    slug = _output_slug(title)
+    stem = output_stem or _output_slug(title)
     out_dir = _unique_output_path(
-        Path(output_dir), slug, generated.strftime("%Y%m%dT%H%M%S")
+        Path(output_dir), stem, generated.strftime("%Y%m%dT%H%M%S")
     )
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -330,7 +346,8 @@ def write_deck_index(
     for i, (section, slides_final) in enumerate(decks_data, start=1):
         filename = f"{i:02d}_{slugify(section.heading)}.json"
         deck_output = _build_deck_output(
-            slides_final, images, generated_at=now, provider=provider, model=model
+            slides_final, images, generated_at=now,
+            provider=provider, model=model, doc_hash=doc_hash,
         )
         (out_dir / filename).write_text(
             deck_output.model_dump_json(indent=2), encoding="utf-8"
@@ -343,6 +360,7 @@ def write_deck_index(
         generated_at=now,
         provider=provider,
         model=model,
+        doc_hash=doc_hash,
         decks=decks,
     )
     index_path = out_dir / "index.json"
@@ -354,6 +372,7 @@ def write_deck_index(
         "generated_at": now,
         "provider":     provider,
         "model":        model,
+        "doc_hash":     doc_hash,
         "slide_count":  sum(len(sf.slides) for _, sf in decks_data),
         "deck_count":   len(decks),
     })
@@ -373,6 +392,8 @@ async def run_multi_deck(
     figure_catalog: list[dict] = [],
     checkpoint: Checkpoint | None = None,
     on_progress: ProgressCallback = None,
+    output_stem: str | None = None,
+    doc_hash: str = "",
 ) -> tuple[DeckIndex, list[str], Path]:
     chapters = [s for s in skeleton.sections if s.level == 1]
     total = len(chapters)
@@ -408,42 +429,60 @@ async def run_multi_deck(
         if not isinstance(result, Exception)
     ]
 
-    deck_index, index_path = write_deck_index(title, decks_data, images, agents, output_dir)
+    deck_index, index_path = write_deck_index(
+        title, decks_data, images, agents, output_dir,
+        output_stem=output_stem, doc_hash=doc_hash,
+    )
     return deck_index, [], index_path
 
 
-# Reserved top-level names in outputs/ that cleanup must never touch, even
-# if a paper's slug happens to collide with them.
-_RESERVED_OUTPUT_NAMES = {"archive", "debug", "library.json"}
-
-
-def _cleanup_stale_output(output_dir: Path | str, title: str) -> None:
+def _cleanup_stale_output(
+    output_dir: Path | str, doc_hash: str, keep: Path | None = None
+) -> None:
     """
-    Remove previous outputs for this document so a fresh run starts clean
-    (duplicate_policy="overwrite"). Matches timestamped names
-    ({slug}_{YYYYMMDDTHHMMSS}[_n]) and legacy un-timestamped ones ({slug}),
-    for both single-deck files and multi-deck directories. Never descends
-    into archive/.
+    Remove previous outputs for this document (duplicate_policy="overwrite").
+
+    Identity is the stored `doc_hash` field in library.json — never parsed from
+    the filename — so the output naming scheme can change freely without breaking
+    cleanup. The manifest is the source of truth: every entry whose doc_hash
+    matches is deleted from disk (single-deck file, or the whole directory for a
+    multi-deck index) and pruned from the manifest. Archived entries live under
+    archive/ and are never matched (the prune preserves them).
+
+    `keep` is the output just written by the current run; it (and its manifest
+    entry) is preserved while its older siblings are deleted. This lets the
+    caller clean up *after* the new deck is on disk, so a crash mid-generation
+    never destroys the prior deck without producing a replacement. A None/empty
+    hash is a no-op (unit-test routing paths that don't supply one).
     """
     out = Path(output_dir)
-    if not out.is_dir():
+    if not out.is_dir() or not doc_hash:
         return
-    slug = _output_slug(title)
-    pattern = re.compile(rf"^{re.escape(slug)}(_\d{{8}}T\d{{6}}(_\d+)?)?$")
-    for entry in out.iterdir():
-        if entry.name in _RESERVED_OUTPUT_NAMES:
+    manifest_path = out / "library.json"
+    try:
+        entries = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        entries = []
+    keep_file_key = None
+    if keep is not None:
+        keep_file_key = "/" + Path(keep).relative_to(out.parent).as_posix()
+    for e in entries:
+        if (
+            e.get("archived")
+            or e.get("doc_hash") != doc_hash
+            or e.get("file") == keep_file_key
+        ):
             continue
-        if entry.is_file():
-            if entry.suffix != ".json":
-                continue
-            stem = entry.name[:-len(".json")]
-        else:
-            stem = entry.name
-        if pattern.match(stem):
-            if entry.is_dir():
-                shutil.rmtree(entry)
-            else:
-                entry.unlink()
+        target = out.parent / e.get("file", "").lstrip("/")
+        # A multi-deck entry points at .../index.json — remove the whole deck dir.
+        to_remove = target.parent if e.get("type") == "multi_deck" else target
+        if to_remove.is_dir():
+            shutil.rmtree(to_remove, ignore_errors=True)
+        elif to_remove.exists():
+            to_remove.unlink()
+
+    # Prune the now-deleted entries from the manifest (same field-based match).
+    remove_library_entries_for_hash(out, doc_hash, keep_file=keep_file_key)
 
 
 async def route(
@@ -463,32 +502,46 @@ async def route(
     figure_catalog: list[dict] = [],
     checkpoint: Checkpoint | None = None,
     on_progress: ProgressCallback = None,
+    output_stem: str | None = None,
+    doc_hash: str = "",
 ):
     chapter_count = sum(1 for s in skeleton.sections if s.level == 1)
     is_multi = (chapter_count > multi_deck_chapter_threshold) and (total_chars > multi_deck_length_threshold)
 
-    # On a fresh run (not resuming from checkpoint), remove stale output so the
-    # directory structure is always an exact reflection of the current run.
-    # keep_both skips this — timestamped filenames make every run distinct.
-    is_resuming = checkpoint is not None and checkpoint._resume
-    if not is_resuming and duplicate_policy == "overwrite":
-        _cleanup_stale_output(output_dir, title)
-
     if is_multi:
-        return await run_multi_deck(
+        result = await run_multi_deck(
             title, doc_map, skeleton, chunks, images, agents,
             max_review_cycles, debug, output_dir,
             figure_catalog=figure_catalog,
             checkpoint=checkpoint,
             on_progress=on_progress,
+            output_stem=output_stem,
+            doc_hash=doc_hash,
         )
-    return await run_single_deck(
-        title, doc_map, skeleton, chunks, images, agents,
-        max_review_cycles, debug, output_dir,
-        figure_catalog=figure_catalog,
-        checkpoint=checkpoint,
-        on_progress=on_progress,
-    )
+    else:
+        result = await run_single_deck(
+            title, doc_map, skeleton, chunks, images, agents,
+            max_review_cycles, debug, output_dir,
+            figure_catalog=figure_catalog,
+            checkpoint=checkpoint,
+            on_progress=on_progress,
+            output_stem=output_stem,
+            doc_hash=doc_hash,
+        )
+
+    # Crash-safe overwrite: delete the document's prior outputs (and prune their
+    # manifest entries) only *after* the new deck is on disk, excluding the one
+    # just written — a crash mid-generation never destroys the prior deck without
+    # producing a replacement. This runs on every successful overwrite, resumed
+    # or not: a resume only ever continues a *failed* run (success clears the
+    # checkpoint), which never wrote a final deck, so the only outputs on disk are
+    # prior generations that overwrite should replace. keep_both skips cleanup —
+    # its timestamps keep every run distinct.
+    new_path = result[2]
+    if duplicate_policy == "overwrite" and new_path is not None:
+        _cleanup_stale_output(output_dir, doc_hash, keep=new_path)
+
+    return result
 
 
 def estimate(
@@ -517,6 +570,15 @@ async def run(
     checkpoint: Checkpoint | None = None,
     on_progress: ProgressCallback = None,
 ):
+    # Output identity is the PDF's content hash, with a readable stem from the
+    # source filename: {filename}_{hash}. This decouples disk naming + the
+    # overwrite policy from the LLM-extracted title, which can drift between runs
+    # (an empty title once fell back to "untitled_document", so a re-run's stale
+    # output was never matched and cleaned up — two library entries resulted).
+    doc_hash    = pdf_content_hash(file_path)
+    name_slug   = slugify(Path(file_path).stem) or "untitled_document"
+    output_stem = f"{name_slug}_{doc_hash}"
+
     extractor = PDFExtractor(chunk_size=chunk_size, overlap_size=overlap_size)
     extraction: ExtractionResult = extractor.extract(str(file_path))
     _notify(on_progress, "extract", 1, 1)
@@ -592,6 +654,8 @@ async def run(
         figure_catalog=figure_catalog,
         checkpoint=ck,
         on_progress=on_progress,
+        output_stem=output_stem,
+        doc_hash=doc_hash,
     )
 
 

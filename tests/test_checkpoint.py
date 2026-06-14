@@ -255,8 +255,14 @@ def _default_agents(planner=None, analyst=None):
 
 
 async def _run_pipeline_async(tmp_dirs, checkpoint, agents):
+    # A real file must exist on disk: run() content-hashes the PDF for output
+    # naming before the (patched) extractor runs. Bytes are arbitrary — the
+    # extractor is stubbed, so they are never parsed.
+    pdf_path = tmp_dirs["output"].parent / "dummy.pdf"
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    pdf_path.write_bytes(b"%PDF-1.7 stub")
     return await pipeline_run(
-        file_path=Path("dummy.pdf"),
+        file_path=pdf_path,
         agents=agents,
         output_dir=tmp_dirs["output"],
         chunk_size=8000,
@@ -546,3 +552,52 @@ class TestComputeKey:
         key = Checkpoint.compute_key(f, "model-a", 8000)
         assert len(key) == 16
         assert all(c in "0123456789abcdef" for c in key)
+
+    def test_same_content_different_filename_same_key(self, tmp_path):
+        # Content identity: a renamed (or copied) PDF reuses its cache.
+        a = tmp_path / "paper.pdf"
+        b = tmp_path / "renamed.pdf"
+        a.write_bytes(b"identical bytes")
+        b.write_bytes(b"identical bytes")
+        assert Checkpoint.compute_key(a, "m", 8000) == Checkpoint.compute_key(b, "m", 8000)
+
+    def test_different_content_different_key(self, tmp_path):
+        a = tmp_path / "a.pdf"
+        b = tmp_path / "b.pdf"
+        a.write_bytes(b"one")
+        b.write_bytes(b"two")
+        assert Checkpoint.compute_key(a, "m", 8000) != Checkpoint.compute_key(b, "m", 8000)
+
+    def test_missing_file_raises_oserror(self, tmp_path):
+        # Callers depend on this to fall back to a path-based key.
+        import pytest
+        with pytest.raises(OSError):
+            Checkpoint.compute_key(tmp_path / "nope.pdf", "m", 8000)
+
+
+# ──────────────────────────────────────────────────────────────
+# Test 6 — Checkpoint.clear() drops the stage cache after success
+# ──────────────────────────────────────────────────────────────
+
+class TestClear:
+    def test_clear_removes_checkpoint_directory(self, tmp_dirs):
+        cp = _checkpoint(tmp_dirs, resume=False)
+        cp.save("skeleton", _skeleton())
+        cp.save("doc_map", _doc_map())
+        assert (tmp_dirs["cache"] / "testkey").exists()
+
+        cp.clear()
+        assert not (tmp_dirs["cache"] / "testkey").exists()
+
+    def test_clear_is_a_no_op_when_nothing_saved(self, tmp_dirs):
+        # Best-effort: clearing a run that never wrote a checkpoint must not raise.
+        _checkpoint(tmp_dirs, resume=False).clear()
+
+    def test_cleared_run_does_not_resume(self, tmp_dirs):
+        # After clear(), a resume run finds no cached stage and returns None.
+        cp = _checkpoint(tmp_dirs, resume=False)
+        cp.save("slides_final", _slides_final())
+        cp.clear()
+
+        resumed = _checkpoint(tmp_dirs, resume=True)
+        assert resumed.load("slides_final", SlidesFinal) is None

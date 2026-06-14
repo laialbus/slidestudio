@@ -143,7 +143,7 @@ def _build_agents(provider_key: str) -> dict:
     }
 
 
-def _build_checkpoint(pdf_path: Path, model_name: str) -> Checkpoint:
+def _build_checkpoint(pdf_path: Path, model_name: str, resume: bool = False) -> Checkpoint:
     try:
         run_key = Checkpoint.compute_key(
             pdf_path, model_name, config.PIPELINE["chunk_size"]
@@ -151,16 +151,21 @@ def _build_checkpoint(pdf_path: Path, model_name: str) -> Checkpoint:
     except OSError:
         import hashlib
         run_key = hashlib.sha256(str(pdf_path).encode()).hexdigest()[:16]
+    # resume defaults to False, mirroring the CLI: a normal upload runs fresh and
+    # overwrites the prior deck. A failed job leaves its stage cache behind (we
+    # only clear() on success), so the /resume endpoint can re-run with
+    # resume=True and continue from the last completed stage. Content-based
+    # run_key means the resume reliably targets the same PDF.
     return Checkpoint(
         base_dir=_PROJECT_ROOT / ".checkpoints",
         run_key=run_key,
-        resume=False,
+        resume=resume,
     )
 
 
 # ── Background pipeline task ──────────────────────────────────────────────────
 
-async def _run_pipeline_job(job_id: str, pdf_path: Path) -> None:
+async def _run_pipeline_job(job_id: str, pdf_path: Path, resume: bool = False) -> None:
     job = _jobs[job_id]
     job.status = "running"
 
@@ -173,7 +178,7 @@ async def _run_pipeline_job(job_id: str, pdf_path: Path) -> None:
 
     try:
         agents = _build_agents(provider_key)
-        ck = _build_checkpoint(pdf_path, model_name)
+        ck = _build_checkpoint(pdf_path, model_name, resume=resume)
 
         _, _, output_path = await pipeline_run(
             file_path=pdf_path,
@@ -193,6 +198,10 @@ async def _run_pipeline_job(job_id: str, pdf_path: Path) -> None:
         job.status = "done"
         if output_path is not None:
             job.output_url = "/" + output_path.relative_to(_PROJECT_ROOT).as_posix()
+
+        # Run finished — drop the stage cache so a later re-upload of the same
+        # PDF regenerates instead of resuming into the already-finished deck.
+        ck.clear()
 
     except (CircuitOpenError, FatalAPIError) as exc:
         job.status = "error"
@@ -261,6 +270,27 @@ def create_app() -> FastAPI:
             "error":      job.error,
             "created_at": job.created_at,
         }
+
+    @app.post("/resume/{job_id}")
+    async def resume_job(job_id: str):
+        # Continue a failed job from its last completed stage. The failed run
+        # left its stage cache behind (clear() only fires on success), so a fresh
+        # task with resume=True picks up where it stopped instead of restarting.
+        job = _jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        if job.status != "error":
+            raise HTTPException(status_code=409, detail="Only a failed job can be resumed.")
+        if not job.pdf_path.exists():
+            raise HTTPException(
+                status_code=409,
+                detail="Source PDF is no longer available; please re-upload.",
+            )
+        job.status = "queued"
+        job.error = None
+        job.progress = {}
+        asyncio.create_task(_run_pipeline_job(job_id, job.pdf_path, resume=True))
+        return {"job_id": job_id}
 
     @app.get("/library")
     async def get_library():

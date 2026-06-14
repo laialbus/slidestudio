@@ -1,8 +1,10 @@
 import hashlib
+import shutil
 from pathlib import Path
 
 from pydantic import BaseModel
 
+from utils.pdf_hash import pdf_content_hash
 from utils.slugify import slugify
 
 
@@ -64,6 +66,20 @@ class Checkpoint:
         child._resume = self._resume
         return child
 
+    def clear(self) -> None:
+        """
+        Remove this run's entire checkpoint directory.
+
+        Stage caches exist only to resume an *interrupted* run; once the deck
+        has been written successfully they are dead weight, and — with resume
+        enabled — would make a re-run of the same PDF short-circuit to the
+        cached slides_final instead of regenerating. Callers invoke this after
+        a successful, complete run. (cli.py re-pins output_path.txt afterwards
+        so `serve` can still locate the output.) ignore_errors keeps a
+        best-effort cleanup from ever failing the run.
+        """
+        shutil.rmtree(self._base, ignore_errors=True)
+
     def save_output_path(self, output_path: Path) -> None:
         """Store the final output path so `serve` can locate it without knowing the title."""
         self._base.mkdir(parents=True, exist_ok=True)
@@ -85,19 +101,21 @@ class Checkpoint:
     def compute_key(file_path: Path, model: str, chunk_size: int) -> str:
         """
         Return a 16-character hex prefix of a SHA-256 digest that covers:
-          - PDF filename (catches a renamed file at the same path)
-          - PDF size in bytes
-          - PDF mtime (catches in-place overwrites)
+          - PDF content (raw bytes via pdf_content_hash — exact document
+            identity, stable across renames and in-place re-saves, unlike the
+            old name+size+mtime triple which false-missed on a touch and could
+            false-hit on a same-size same-second edit)
           - model string (model upgrade → fresh run)
           - chunk_size (config change → fresh run)
 
-        Uses hashlib.sha256 — deterministic across processes, unlike hash().
+        Content alone is insufficient as a cache key: model and chunk_size are
+        *processing* inputs that change the agent outputs, so they must stay in
+        the digest — this is why pdf_content_hash cannot simply replace
+        compute_key. Raises OSError if the PDF is missing (callers fall back to
+        a path-based key). Uses hashlib.sha256 — deterministic across processes.
         """
-        stat = file_path.stat()
         h = hashlib.sha256()
-        h.update(file_path.name.encode())
-        h.update(str(int(stat.st_size)).encode())
-        h.update(f"{stat.st_mtime:.6f}".encode())
+        h.update(pdf_content_hash(file_path, length=64).encode())
         h.update(model.encode())
         h.update(str(chunk_size).encode())
         return h.hexdigest()[:16]

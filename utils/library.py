@@ -2,6 +2,39 @@ import json
 from pathlib import Path
 
 
+def remove_library_entries_for_hash(
+    outputs_dir: Path, doc_hash: str, keep_file: str | None = None
+) -> None:
+    """
+    Drop manifest entries belonging to one document (by content hash), so an
+    overwrite run doesn't leave an entry pointing at a file that
+    _cleanup_stale_output just deleted. Identity is the stored `doc_hash` field —
+    never parsed from the filename — so the output naming scheme can change
+    freely. Archived entries are preserved (their files live under archive/ and
+    are never cleaned). `keep_file` is the entry just written by the current run
+    (its `file` value); it is preserved even though it shares the hash, so
+    cleanup can run after the new deck is on disk.
+    """
+    if not doc_hash:
+        return
+    manifest_path = outputs_dir / "library.json"
+    try:
+        entries = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return
+    kept = [
+        e for e in entries
+        if e.get("archived")
+        or e.get("file") == keep_file
+        or e.get("doc_hash") != doc_hash
+    ]
+    if len(kept) == len(entries):
+        return
+    tmp_path = manifest_path.with_suffix(".tmp")
+    tmp_path.write_text(json.dumps(kept, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp_path.replace(manifest_path)
+
+
 def upsert_library_manifest(outputs_dir: Path, entry: dict) -> None:
     """Insert or replace an entry in library.json, keeping it sorted newest-first."""
     manifest_path = outputs_dir / "library.json"
@@ -79,6 +112,7 @@ def rebuild_library_manifest(outputs_dir: Path) -> list[dict]:
             "generated_at": data.get("generated_at", ""),
             "provider":     data.get("provider", ""),
             "model":        data.get("model", ""),
+            "doc_hash":     data.get("doc_hash", ""),
             "slide_count":  slide_count,
             "deck_count":   deck_count,
             "archived":     archived,

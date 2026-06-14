@@ -270,6 +270,15 @@ class TestWriteOutput:
         assert path.name.startswith("untitled_document_")
         assert path.exists()
 
+    def test_output_stem_overrides_title_for_filename(self, tmp_path):
+        # In production run() passes a content-keyed stem; the display title is
+        # unaffected (it comes from SlidesFinal.title, asserted elsewhere).
+        path = write_output(
+            _slides_final(), [], "Ignored Title", False, tmp_path,
+            _intermediates(), _PROVIDER, _MODEL, output_stem="myfile_deadbeef",
+        )
+        assert re.fullmatch(r"myfile_deadbeef_\d{8}T\d{6}(_\d+)?\.json", path.name)
+
     def test_two_runs_same_title_keep_distinct_files(self, tmp_path):
         p1 = write_output(_slides_final(), [], "My Test Paper", False, tmp_path, _intermediates(), _PROVIDER, _MODEL)
         p2 = write_output(_slides_final(), [], "My Test Paper", False, tmp_path, _intermediates(), _PROVIDER, _MODEL)
@@ -393,81 +402,203 @@ class TestRunSingleDeckSequence:
 # Tests — duplicate_policy and stale-output cleanup
 # ──────────────────────────────────────────────────────────────
 
+_HASH = "deadbeef"
+
+
 class TestDuplicatePolicy:
-    def _route(self, tmp_path, policy):
+    def _route(self, tmp_path, policy, *, name_slug="test_paper", doc_hash=_HASH):
         return _run(route(
             "Test Paper", _skeleton_with_chapters(1), _doc_map(), ["chunk"], [],
             _agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
             total_chars=10_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
             duplicate_policy=policy,
+            output_stem=f"{name_slug}_{doc_hash}", doc_hash=doc_hash,
         ))
 
     def _outputs(self, tmp_path):
-        return sorted(p.name for p in tmp_path.glob("test_paper*.json"))
+        return sorted(p.name for p in tmp_path.glob(f"*_{_HASH}_*.json"))
+
+    def _library(self, tmp_path):
+        return json.loads((tmp_path / "library.json").read_text())
 
     def test_overwrite_leaves_single_output_after_two_runs(self, tmp_path):
         self._route(tmp_path, "overwrite")
         self._route(tmp_path, "overwrite")
         assert len(self._outputs(tmp_path)) == 1
 
+    def test_overwrite_leaves_single_library_entry_after_two_runs(self, tmp_path):
+        # The manifest entry is keyed on the timestamped path, so without
+        # hash-based pruning the prior entry would linger (the original bug).
+        self._route(tmp_path, "overwrite")
+        self._route(tmp_path, "overwrite")
+        assert len(self._library(tmp_path)) == 1
+
     def test_keep_both_leaves_two_outputs_after_two_runs(self, tmp_path):
         self._route(tmp_path, "keep_both")
         self._route(tmp_path, "keep_both")
         assert len(self._outputs(tmp_path)) == 2
 
-    def test_overwrite_removes_legacy_untimestamped_file(self, tmp_path):
-        (tmp_path / "test_paper.json").write_text("{}")
-        self._route(tmp_path, "overwrite")
-        names = self._outputs(tmp_path)
-        assert "test_paper.json" not in names
-        assert len(names) == 1
+    def test_overwrite_matches_same_content_under_renamed_file(self, tmp_path):
+        # Content hash is the identity: a re-run of the same PDF overwrites even
+        # when the source file was renamed (different readable stem, same hash).
+        self._route(tmp_path, "overwrite", name_slug="old_name")
+        self._route(tmp_path, "overwrite", name_slug="new_name")
+        assert len(self._outputs(tmp_path)) == 1
 
     def test_overwrite_does_not_touch_archived_copy(self, tmp_path):
         archive = tmp_path / "archive"
         archive.mkdir()
-        (archive / "test_paper.json").write_text("{}")
+        (archive / f"test_paper_{_HASH}_20260101T000000.json").write_text("{}")
         self._route(tmp_path, "overwrite")
-        assert (archive / "test_paper.json").exists()
+        assert (archive / f"test_paper_{_HASH}_20260101T000000.json").exists()
+
+    def test_overwrite_cleans_prior_deck_even_when_resuming(self, tmp_path):
+        # A resume only ever continues a failed run, so a successful resumed run
+        # must still overwrite the prior (successful) deck — cleanup is no longer
+        # gated on the resume flag.
+        from utils.checkpoint import Checkpoint
+        old = tmp_path / f"test_paper_{_HASH}_20260101T000000.json"
+        old.write_text("{}")
+        (tmp_path / "library.json").write_text(json.dumps([{
+            "title": "Old", "file": "/" + old.relative_to(tmp_path.parent).as_posix(),
+            "type": "single_deck", "doc_hash": _HASH, "archived": False,
+        }]))
+        ck = Checkpoint(base_dir=tmp_path / ".ckpt", run_key="k", resume=True)
+        _run(route(
+            "Test Paper", _skeleton_with_chapters(1), _doc_map(), ["chunk"], [],
+            _agents(), multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
+            total_chars=10_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
+            duplicate_policy="overwrite", checkpoint=ck,
+            output_stem=f"test_paper_{_HASH}", doc_hash=_HASH,
+        ))
+        assert not old.exists()
+        assert len(self._outputs(tmp_path)) == 1
+
+    def test_overwrite_keeps_old_output_when_generation_fails(self, tmp_path):
+        # Crash-safety: cleanup runs only after a successful write, so a failure
+        # mid-generation leaves the prior deck (and its manifest entry) intact.
+        old = tmp_path / f"test_paper_{_HASH}_20260101T000000.json"
+        old.write_text("{}")
+        (tmp_path / "library.json").write_text(json.dumps([{
+            "title": "Old", "file": f"/outputs/test_paper_{_HASH}_20260101T000000.json",
+            "type": "single_deck", "generated_at": "2026-01-01T00:00:00+00:00",
+            "doc_hash": _HASH, "archived": False,
+        }]))
+        agents = _agents()
+        async def boom(**_kwargs):
+            raise RuntimeError("planner exploded")
+        agents["planner"].run = boom
+        with pytest.raises(RuntimeError):
+            _run(route(
+                "Test Paper", _skeleton_with_chapters(1), _doc_map(), ["chunk"], [],
+                agents, multi_deck_chapter_threshold=3, multi_deck_length_threshold=40_000,
+                total_chars=10_000, max_review_cycles=1, debug=False, output_dir=tmp_path,
+                duplicate_policy="overwrite",
+                output_stem=f"test_paper_{_HASH}", doc_hash=_HASH,
+            ))
+        assert old.exists()
+        assert len(self._library(tmp_path)) == 1
 
 
 class TestCleanupStaleOutput:
-    def test_removes_legacy_file_and_directory(self, tmp_path):
-        (tmp_path / "my_paper.json").write_text("{}")
-        (tmp_path / "my_paper").mkdir()
-        _cleanup_stale_output(tmp_path, "My Paper")
-        assert not (tmp_path / "my_paper.json").exists()
-        assert not (tmp_path / "my_paper").exists()
+    """Cleanup is manifest-driven: it deletes the files referenced by library.json
+    entries whose stored doc_hash matches — never by parsing the filename."""
 
-    def test_removes_timestamped_variants(self, tmp_path):
-        (tmp_path / "my_paper_20260101T000000.json").write_text("{}")
-        (tmp_path / "my_paper_20260101T000000_2.json").write_text("{}")
-        (tmp_path / "my_paper_20260101T000000").mkdir()
-        _cleanup_stale_output(tmp_path, "My Paper")
-        assert list(tmp_path.iterdir()) == []
+    def _entry(self, tmp_path, name, doc_hash, *, multi=False, archived=False):
+        if multi:
+            d = tmp_path / name
+            d.mkdir()
+            (d / "index.json").write_text("{}")
+            on_disk, file_rel = d, d / "index.json"
+            dtype = "multi_deck"
+        else:
+            f = tmp_path / name
+            f.write_text("{}")
+            on_disk, file_rel = f, f
+            dtype = "single_deck"
+        entry = {
+            "title": "X", "type": dtype, "archived": archived,
+            "doc_hash": doc_hash,
+            "file": "/" + file_rel.relative_to(tmp_path.parent).as_posix(),
+        }
+        return on_disk, entry
 
-    def test_does_not_remove_longer_slug_sharing_prefix(self, tmp_path):
-        (tmp_path / "my_paper_extended_20260101T000000.json").write_text("{}")
-        _cleanup_stale_output(tmp_path, "My Paper")
-        assert (tmp_path / "my_paper_extended_20260101T000000.json").exists()
+    def _write_lib(self, tmp_path, entries):
+        (tmp_path / "library.json").write_text(json.dumps(entries), encoding="utf-8")
 
-    def test_never_removes_reserved_names(self, tmp_path):
-        (tmp_path / "archive").mkdir()
-        (tmp_path / "debug").mkdir()
-        (tmp_path / "library.json").write_text("[]")
-        _cleanup_stale_output(tmp_path, "Archive")
-        _cleanup_stale_output(tmp_path, "Debug")
-        _cleanup_stale_output(tmp_path, "Library")
-        assert (tmp_path / "archive").is_dir()
-        assert (tmp_path / "debug").is_dir()
-        assert (tmp_path / "library.json").exists()
+    def _lib(self, tmp_path):
+        return json.loads((tmp_path / "library.json").read_text())
 
-    def test_empty_title_cleans_untitled_document(self, tmp_path):
-        (tmp_path / "untitled_document_20260101T000000.json").write_text("{}")
-        _cleanup_stale_output(tmp_path, "???")
-        assert list(tmp_path.iterdir()) == []
+    def test_removes_matching_files_and_entries(self, tmp_path):
+        f1, e1 = self._entry(tmp_path, "a.json", _HASH)
+        d1, e2 = self._entry(tmp_path, "book", _HASH, multi=True)
+        self._write_lib(tmp_path, [e1, e2])
+        _cleanup_stale_output(tmp_path, _HASH)
+        assert not f1.exists()
+        assert not d1.exists()
+        assert self._lib(tmp_path) == []
+
+    def test_matches_regardless_of_filename(self, tmp_path):
+        # Same stored hash, different names (renamed PDF) → both this document.
+        f1, e1 = self._entry(tmp_path, "alpha.json", _HASH)
+        f2, e2 = self._entry(tmp_path, "beta.json", _HASH)
+        self._write_lib(tmp_path, [e1, e2])
+        _cleanup_stale_output(tmp_path, _HASH)
+        assert not f1.exists() and not f2.exists()
+
+    def test_does_not_remove_different_hash(self, tmp_path):
+        f1, e1 = self._entry(tmp_path, "other.json", "cafebabe")
+        self._write_lib(tmp_path, [e1])
+        _cleanup_stale_output(tmp_path, _HASH)
+        assert f1.exists()
+        assert self._lib(tmp_path) == [e1]
+
+    def test_preserves_archived_entry_and_file(self, tmp_path):
+        f1, e1 = self._entry(tmp_path, "archived.json", _HASH, archived=True)
+        self._write_lib(tmp_path, [e1])
+        _cleanup_stale_output(tmp_path, _HASH)
+        assert f1.exists()
+        assert self._lib(tmp_path) == [e1]
+
+    def test_orphan_file_not_in_manifest_is_left(self, tmp_path):
+        # A file on disk but absent from the manifest is invisible to cleanup
+        # (the documented tradeoff of manifest-driven deletion; library-refresh
+        # is the repair path).
+        orphan = tmp_path / f"orphan_{_HASH}_20260101T000000.json"
+        orphan.write_text("{}")
+        self._write_lib(tmp_path, [])
+        _cleanup_stale_output(tmp_path, _HASH)
+        assert orphan.exists()
+
+    def test_empty_hash_is_a_no_op(self, tmp_path):
+        f1, e1 = self._entry(tmp_path, "a.json", _HASH)
+        self._write_lib(tmp_path, [e1])
+        _cleanup_stale_output(tmp_path, "")
+        assert f1.exists()
+
+    def test_missing_manifest_is_a_no_op(self, tmp_path):
+        (tmp_path / "stray.json").write_text("{}")
+        _cleanup_stale_output(tmp_path, _HASH)  # no library.json — must not raise
 
     def test_missing_output_dir_is_a_no_op(self, tmp_path):
-        _cleanup_stale_output(tmp_path / "does_not_exist", "My Paper")
+        _cleanup_stale_output(tmp_path / "does_not_exist", _HASH)
+
+    def test_keep_excludes_the_just_written_file(self, tmp_path):
+        old, e_old = self._entry(tmp_path, "paper_old.json", _HASH)
+        new, e_new = self._entry(tmp_path, "paper_new.json", _HASH)
+        self._write_lib(tmp_path, [e_old, e_new])
+        _cleanup_stale_output(tmp_path, _HASH, keep=new)
+        assert not old.exists()
+        assert new.exists()
+        assert [e["file"] for e in self._lib(tmp_path)] == [e_new["file"]]
+
+    def test_keep_excludes_the_just_written_multi_deck_dir(self, tmp_path):
+        old_dir, e_old = self._entry(tmp_path, "book_old", _HASH, multi=True)
+        new_dir, e_new = self._entry(tmp_path, "book_new", _HASH, multi=True)
+        self._write_lib(tmp_path, [e_old, e_new])
+        _cleanup_stale_output(tmp_path, _HASH, keep=new_dir / "index.json")
+        assert not old_dir.exists()
+        assert new_dir.exists()
 
 
 # ──────────────────────────────────────────────────────────────
