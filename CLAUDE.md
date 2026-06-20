@@ -51,3 +51,6 @@ Set PROVIDER and MODEL in config.py. Add your API key to .env (never commit it).
 
 3. **Config Ownership**
     - `cli.py`, `pipeline.py`, and `server.py` are the only files that may import `config.py` directly. All other modules receive values through constructor parameters or function arguments.
+
+## Code Style
+@PYTHON_STYLE.md
