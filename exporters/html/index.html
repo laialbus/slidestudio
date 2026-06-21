@@ -750,6 +750,14 @@
       </div>
 
       <div class="settings-row">
+        <span class="settings-label">PDF extraction</span>
+        <div style="display:flex;gap:8px">
+          <button class="modal-btn" id="s-extractor-fast" title="Lightweight extraction — no model downloads (default)">Fast</button>
+          <button class="modal-btn" id="s-extractor-quality" title="MinerU — better layout, tables and math; downloads models on first use">High quality</button>
+        </div>
+      </div>
+
+      <div class="settings-row">
         <span class="settings-label">Provider</span>
         <select id="s-provider" class="settings-select"></select>
       </div>
@@ -1430,6 +1438,7 @@
     let _sModels   = [];   // [{key, value}]
     let _sProvider = '';
     let _sPolicy   = 'overwrite';   // "overwrite" | "keep_both"
+    let _sExtractor = 'pymupdf4llm';   // "pymupdf4llm" | "mineru"
 
     async function openSettings() {
       try {
@@ -1437,6 +1446,7 @@
         _sProvider = data.PROVIDER;
         _sModels   = Object.entries(data.MODELS).map(([key, value]) => ({ key, value }));
         _sPolicy   = (data.PIPELINE && data.PIPELINE.duplicate_policy) || 'overwrite';
+        _sExtractor = (data.PIPELINE && data.PIPELINE.extractor) || 'pymupdf4llm';
       } catch (_) {}
       renderSettingsForm();
       $('settings-modal').classList.remove('hidden');
@@ -1448,6 +1458,8 @@
       $('s-theme-light').classList.toggle('active', theme === 'light');
       $('s-policy-overwrite').classList.toggle('active', _sPolicy === 'overwrite');
       $('s-policy-keep').classList.toggle('active', _sPolicy === 'keep_both');
+      $('s-extractor-fast').classList.toggle('active', _sExtractor === 'pymupdf4llm');
+      $('s-extractor-quality').classList.toggle('active', _sExtractor === 'mineru');
       $('s-error').textContent = '';
       renderProviderSelect();
       renderModelsList();
@@ -1536,7 +1548,7 @@
           body: JSON.stringify({
             PROVIDER: provider,
             MODELS: models,
-            PIPELINE: { duplicate_policy: _sPolicy },
+            PIPELINE: { duplicate_policy: _sPolicy, extractor: _sExtractor },
           }),
         });
         if (!r.ok) {
@@ -1558,6 +1570,8 @@
       $('s-theme-light').addEventListener('click', () => { setTheme('light'); renderSettingsForm(); });
       $('s-policy-overwrite').addEventListener('click', () => { _sPolicy = 'overwrite'; renderSettingsForm(); });
       $('s-policy-keep').addEventListener('click', () => { _sPolicy = 'keep_both'; renderSettingsForm(); });
+      $('s-extractor-fast').addEventListener('click', () => { _sExtractor = 'pymupdf4llm'; renderSettingsForm(); });
+      $('s-extractor-quality').addEventListener('click', () => { _sExtractor = 'mineru'; renderSettingsForm(); });
       $('s-provider').addEventListener('change', e => { _sProvider = e.target.value; renderModelsList(); });
       $('s-add-model').addEventListener('click', () => {
         _sModels.push({ key: '', value: '' });

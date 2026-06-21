@@ -17,6 +17,11 @@ PIPELINE = {
     # ── Generation ──────────────────────────────────────────────────────────────
     "max_slides":           16,      # hard cap on slides per deck
     "writer_batch_size":    5,       # slides per Writer API call — stays within output token limits
+    # ── Extraction ──────────────────────────────────────────────────────────────
+    # extractor: which PDF extractor to use.
+    #   "pymupdf4llm" — lite path; no model-weight downloads (default)
+    #   "mineru"      — quality path; bundles layout/formula/table models
+    "extractor":            "mineru",
     # ── Chunking ────────────────────────────────────────────────────────────────
     "chunk_size":           8_000,   # target chunk size in characters (~2k tokens)
     "overlap_size":         1_500,   # sliding window overlap between chunks (~300 words)
@@ -89,4 +94,10 @@ if PIPELINE["duplicate_policy"] not in ("overwrite", "keep_both"):
     _sys.exit(
         f"config error: duplicate_policy={PIPELINE['duplicate_policy']!r} "
         f"must be 'overwrite' or 'keep_both'."
+    )
+
+if PIPELINE["extractor"] not in ("pymupdf4llm", "mineru"):
+    _sys.exit(
+        f"config error: extractor={PIPELINE['extractor']!r} "
+        f"must be 'pymupdf4llm' or 'mineru'."
     )

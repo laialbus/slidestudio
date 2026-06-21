@@ -1,0 +1,32 @@
+# Optional "quality" extractor — enable with PIPELINE["extractor"] = "mineru".
+#
+# MinerU bundles layout detection, formula recognition (UniMERNet), and table
+# recognition. It downloads GB-scale model weights on first run and pulls a
+# torch-based stack, so it is intentionally kept out of the core requirements.txt
+# to preserve the lightweight "lite" (pymupdf4llm) default.
+#
+# Install:  pip install -r requirements-mineru.txt
+# Then run MinerU once manually so the model-weight download doesn't happen
+# mid-generation:  mineru -p some.pdf -o /tmp/mineru_warmup
+#
+# The [pipeline] extra is the pipeline-backend-only install (layout + formula +
+# table + OCR via torch/torchvision/transformers/onnxruntime). It deliberately
+# excludes the heavier VLM backends (mineru[core]/[all] add vllm/lmdeploy/mlx).
+# Verified with mineru 3.4.0 on Apple Silicon (model source: HuggingFace).
+#
+# COEXISTENCE WITH THE LITE PATH (one venv) — pillow pin required:
+# surya-ocr (lite path) requires pillow<11; mineru's metadata wants pillow>=11
+# but RUNS FINE on pillow 10.4 (verified: mineru 3.4.0 produced content_list.json
+# on pillow 10.4.0). Both pins are conservative, so we pin pillow below 11 and
+# accept a cosmetic `pip check` warning that mineru's pillow>=11 is unsatisfied.
+# (Also force the pipeline backend at runtime via `-b pipeline`; the CLI default
+# is hybrid-engine, which needs the VLM stack this extra does not install — the
+# MineruExtractor already passes -b pipeline.)
+mineru[pipeline]
+# six is imported by mineru[pipeline] 3.4.0's bundled PaddleOCR port but is not
+# declared as a dependency — install it explicitly or the pipeline backend
+# crashes on import with ModuleNotFoundError: No module named 'six'.
+six
+# Pin pillow below 11 LAST so it overrides mineru's transitive pillow>=11. Keeps
+# surya-ocr in its supported range; mineru runs fine on 10.4.
+pillow<11

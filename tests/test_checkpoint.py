@@ -206,22 +206,20 @@ class StubRefiner:
 
 @contextmanager
 def _patch_extractor(extraction=None):
-    """Patch PDFExtractor in the pipeline module to return a fixed extraction."""
+    """Patch make_extractor in the pipeline module to return a fixed extraction."""
     if extraction is None:
         extraction = _FAKE_EXTRACTION
 
     class _FakeExtractor:
-        def __init__(self, **kwargs):
-            pass
         def extract(self, path):
             return extraction
 
-    original = _pipeline_module.PDFExtractor
-    _pipeline_module.PDFExtractor = _FakeExtractor
+    original = _pipeline_module.make_extractor
+    _pipeline_module.make_extractor = lambda *args, **kwargs: _FakeExtractor()
     try:
         yield
     finally:
-        _pipeline_module.PDFExtractor = original
+        _pipeline_module.make_extractor = original
 
 
 # ──────────────────────────────────────────────────────────────
@@ -267,6 +265,7 @@ async def _run_pipeline_async(tmp_dirs, checkpoint, agents):
         output_dir=tmp_dirs["output"],
         chunk_size=8000,
         overlap_size=1500,
+        extractor="pymupdf4llm",
         multi_deck_chapter_threshold=3,
         multi_deck_length_threshold=0,
         max_review_cycles=1,

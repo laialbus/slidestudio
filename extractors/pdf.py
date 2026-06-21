@@ -6,8 +6,18 @@ import pymupdf
 import pymupdf.layout  # registers the GNN layout engine inside pymupdf4llm
 import pymupdf4llm.helpers.document_layout as _dl
 import pymupdf4llm.helpers.pymupdf_rag as _rag
-from pydantic import BaseModel
 
+from extractors.base import (
+    BaseExtractor,
+    ExtractionResult,
+    ImageRecord,
+    TocItem,
+)
+from extractors.chunking import (
+    _build_chunk_images,
+    _chunk_by_chars,
+    _chunk_by_headings,
+)
 from extractors.layout import (
     LayoutAnalyser,
     _CAPTION_LABELS,
@@ -15,6 +25,11 @@ from extractors.layout import (
     _merge_figure_regions,
     _pair_figures_captions,
 )
+
+# ExtractionResult, TocItem, ImageRecord, and the chunking helpers are imported
+# above and re-exported here so existing call sites
+# (`from extractors.pdf import ExtractionResult, PDFExtractor`, tests importing
+# `_chunk_by_chars`) keep working unchanged.
 
 # Sub-chunk limits: used when a heading-boundary section exceeds the limit
 # or when no headings are found (character-overlap fallback).
@@ -41,57 +56,32 @@ _CAPTION_RE = re.compile(r"^(fig\.?|figure|chart|table)\b", re.IGNORECASE)
 # Title extraction: accept spans within this fraction of the max font size on page 1
 _TITLE_FONT_TOLERANCE = 0.95
 
-# Heading boundary: only # and ## (not ### or deeper)
-_HEADING_LINE_RE = re.compile(r"^(#{1,2})(?!#)\s", re.MULTILINE)
-
-# Figure ID tag — injected into markdown, scanned back from chunks
-_FIGURE_ID_RE = re.compile(r"\[FIGURE_ID:\s*(\d+)\]")
-
 # Table validation thresholds
 _MAX_TABLE_ROWS   = 70
 _MIN_COL_FRACTION = 0.8   # ≥80% of rows must match the modal column count
 
 
 # ──────────────────────────────────────────────────────────────
-# Output models — live in extractors/, never imported by schemas/,
-# agents/, or providers/.
-# ──────────────────────────────────────────────────────────────
-
-class TocItem(BaseModel):
-    level:   int
-    heading: str
-    page:    int
-
-
-class ImageRecord(BaseModel):
-    index:    int
-    caption:  str
-    data_uri: str
-    page:     int
-
-
-class ExtractionResult(BaseModel):
-    markdown:     str
-    toc_items:    list[TocItem]
-    chunks:       list[str]
-    chunk_images: list[list[int]]   # chunk_idx → figure indices in that chunk
-    images:       list[ImageRecord]
-    page_count:   int
-    char_count:   int
-    ocr_used:     bool
-    pdf_title:    str = ""          # largest-font text on page 1; empty if undetermined
-
-
-# ──────────────────────────────────────────────────────────────
 # Extractor
 # ──────────────────────────────────────────────────────────────
 
-class PDFExtractor:
+class PDFExtractor(BaseExtractor):
+    """Lite extractor: pymupdf4llm layout engine + Surya figure detection.
+
+    Carries no model-weight download cost beyond the optional Surya predictor,
+    so it stays the lightweight default. chunk_size/overlap_size keep their
+    module-constant defaults so the many `PDFExtractor()` call sites in the test
+    suite continue to work; the pipeline always passes config values explicitly.
+    """
+
     def __init__(self, chunk_size: int = _CHUNK_CHAR_LIMIT,
                  overlap_size: int = _OVERLAP_SIZE):
-        self._chunk_size   = chunk_size
-        self._overlap_size = overlap_size
-        self._layout       = LayoutAnalyser()
+        super().__init__(chunk_size, overlap_size)
+        self._layout = LayoutAnalyser()
+
+    @property
+    def name(self) -> str:
+        return "pymupdf4llm"
 
     def extract(self, file_path: str) -> ExtractionResult:
         doc = pymupdf.open(file_path)
@@ -163,81 +153,6 @@ class PDFExtractor:
             ocr_used=ocr_used,
             pdf_title=pdf_title,
         )
-
-
-# ──────────────────────────────────────────────────────────────
-# Heading-boundary chunking
-# ──────────────────────────────────────────────────────────────
-
-def _chunk_by_headings(md: str, chunk_size: int, overlap_size: int) -> list[str]:
-    """
-    Primary: split on # / ## lines. Each section is one chunk.
-    If a section exceeds chunk_size, sub-split with overlap while preserving
-    the heading at the top of every sub-chunk.
-    Fallback: character overlap chunking when no # or ## headings exist.
-    """
-    positions = [m.start() for m in _HEADING_LINE_RE.finditer(md)]
-
-    if not positions:
-        return _chunk_by_chars(md, chunk_size, overlap_size)
-
-    # Slice sections: [pos[0]..pos[1]), [pos[1]..pos[2]), …, [pos[-1]..end)
-    sections: list[str] = []
-    for i, start in enumerate(positions):
-        end = positions[i + 1] if i + 1 < len(positions) else len(md)
-        sections.append(md[start:end].rstrip())
-
-    result: list[str] = []
-
-    # Preamble — text before the first heading
-    preamble = md[:positions[0]].strip()
-    if preamble:
-        result.extend(_split_section("", preamble, chunk_size, overlap_size))
-
-    for section in sections:
-        # Extract the heading line and the body separately
-        nl = section.find("\n")
-        if nl == -1:
-            heading, body = section, ""
-        else:
-            heading, body = section[:nl], section[nl + 1:]
-
-        result.extend(_split_section(heading, body, chunk_size, overlap_size))
-
-    return [c for c in result if c.strip()] or [md]
-
-
-def _split_section(heading: str, body: str, chunk_size: int, overlap_size: int) -> list[str]:
-    """
-    If heading+body fits in chunk_size, return as one chunk.
-    Otherwise sub-split the body with overlap and prefix every sub-chunk with heading.
-    """
-    full = (heading + "\n" + body).strip() if heading else body.strip()
-    if len(full) <= chunk_size:
-        return [full] if full else []
-
-    sub_bodies = _chunk_by_chars(body, chunk_size - len(heading) - 1, overlap_size)
-    prefix = heading + "\n" if heading else ""
-    return [(prefix + sb).strip() for sb in sub_bodies if sb.strip()]
-
-
-def _chunk_by_chars(text: str, chunk_size: int, overlap_size: int) -> list[str]:
-    """Character-overlap chunking with paragraph-snap boundaries."""
-    if len(text) <= chunk_size:
-        return [text] if text.strip() else []
-
-    chunks: list[str] = []
-    start = 0
-    while start < len(text):
-        end = start + chunk_size
-        if end < len(text):
-            pb = text.rfind("\n\n", start, end)
-            if pb != -1:
-                end = pb
-        chunks.append(text[start:end].strip())
-        start = max(end - overlap_size, start + 1)
-
-    return [c for c in chunks if c]
 
 
 # ──────────────────────────────────────────────────────────────
@@ -804,7 +719,7 @@ def _extract_pdf_title(doc) -> str:
 
 
 # ──────────────────────────────────────────────────────────────
-# Figure-ID injection and chunk-image mapping
+# Figure-ID injection
 # ──────────────────────────────────────────────────────────────
 
 def _inject_figure_ids(md: str, images: list[ImageRecord]) -> str:
@@ -840,11 +755,3 @@ def _inject_figure_ids(md: str, images: list[ImageRecord]) -> str:
             count=1,
         )
     return md
-
-
-def _build_chunk_images(chunks: list[str]) -> list[list[int]]:
-    """Return a list parallel to chunks; each entry is the figure IDs found in that chunk."""
-    return [
-        [int(m.group(1)) for m in _FIGURE_ID_RE.finditer(chunk)]
-        for chunk in chunks
-    ]

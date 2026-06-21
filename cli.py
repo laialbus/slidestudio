@@ -230,6 +230,7 @@ def estimate(pdf_path: str):
         file_path=Path(pdf_path),
         chunk_size=config.PIPELINE["chunk_size"],
         overlap_size=config.PIPELINE["overlap_size"],
+        extractor=config.PIPELINE["extractor"],
         provider_key=provider_key,
         model_name=model_name,
     ))
@@ -301,6 +302,7 @@ async def _run_pipeline(
         output_dir=Path("outputs").resolve(),
         chunk_size=config.PIPELINE["chunk_size"],
         overlap_size=config.PIPELINE["overlap_size"],
+        extractor=config.PIPELINE["extractor"],
         multi_deck_chapter_threshold=config.PIPELINE["multi_deck_chapter_threshold"],
         multi_deck_length_threshold=config.PIPELINE["multi_deck_length_threshold"],
         max_review_cycles=max_review_cycles,

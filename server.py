@@ -55,7 +55,10 @@ _SETTINGS_PATH = _PROJECT_ROOT / "settings.json"
 
 
 # PIPELINE keys the web UI is allowed to override via settings.json.
-_SETTABLE_PIPELINE_KEYS = {"duplicate_policy": ("overwrite", "keep_both")}
+_SETTABLE_PIPELINE_KEYS = {
+    "duplicate_policy": ("overwrite", "keep_both"),
+    "extractor": ("pymupdf4llm", "mineru"),
+}
 
 
 class _SettingsPayload(BaseModel):
@@ -186,6 +189,7 @@ async def _run_pipeline_job(job_id: str, pdf_path: Path, resume: bool = False) -
             output_dir=_OUTPUTS_DIR,
             chunk_size=config.PIPELINE["chunk_size"],
             overlap_size=config.PIPELINE["overlap_size"],
+            extractor=config.PIPELINE["extractor"],
             multi_deck_chapter_threshold=config.PIPELINE["multi_deck_chapter_threshold"],
             multi_deck_length_threshold=config.PIPELINE["multi_deck_length_threshold"],
             max_review_cycles=config.PIPELINE["max_review_cycles"],

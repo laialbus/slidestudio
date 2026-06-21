@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Callable
 
 from agents.analyst import AnalystResult
-from extractors.pdf import ExtractionResult, PDFExtractor
+from extractors.base import ExtractionResult
+from extractors.factory import make_extractor
 from schemas.deck_index import DeckEntry, DeckIndex
 from schemas.deck_output import DeckOutput, ImageEntry
 from schemas.document_map import DocumentMap
@@ -548,11 +549,13 @@ def estimate(
     file_path: Path,
     chunk_size: int,
     overlap_size: int,
+    extractor: str,
     provider_key: str,
     model_name: str,
 ) -> dict:
-    extractor = PDFExtractor(chunk_size=chunk_size, overlap_size=overlap_size)
-    extraction = extractor.extract(str(file_path))
+    extraction = make_extractor(extractor, chunk_size, overlap_size).extract(
+        str(file_path)
+    )
     return analyze_pdf_cost(extraction, provider_key, model_name)
 
 
@@ -562,6 +565,7 @@ async def run(
     output_dir: Path,
     chunk_size: int,
     overlap_size: int,
+    extractor: str,
     multi_deck_chapter_threshold: int,
     multi_deck_length_threshold: int,
     max_review_cycles: int,
@@ -579,8 +583,9 @@ async def run(
     name_slug   = slugify(Path(file_path).stem) or "untitled_document"
     output_stem = f"{name_slug}_{doc_hash}"
 
-    extractor = PDFExtractor(chunk_size=chunk_size, overlap_size=overlap_size)
-    extraction: ExtractionResult = extractor.extract(str(file_path))
+    extraction: ExtractionResult = make_extractor(
+        extractor, chunk_size, overlap_size
+    ).extract(str(file_path))
     _notify(on_progress, "extract", 1, 1)
 
     # Convert images to plain dicts for in-memory passing (agents never import

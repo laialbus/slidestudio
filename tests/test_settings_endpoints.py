@@ -175,6 +175,31 @@ class TestDuplicatePolicySetting:
         r = c.put("/settings", json=payload)
         assert r.status_code == 422
 
+
+class TestExtractorSetting:
+    def _payload(self, extractor=None):
+        payload = {"PROVIDER": "anthropic", "MODELS": {"anthropic": "claude-sonnet-4-20250514"}}
+        if extractor is not None:
+            payload["PIPELINE"] = {"extractor": extractor}
+        return payload
+
+    def test_get_settings_includes_extractor(self, client):
+        c, _ = client
+        data = c.get("/settings").json()
+        assert data["PIPELINE"]["extractor"] == config.PIPELINE["extractor"]
+
+    def test_put_persists_extractor(self, client):
+        c, path = client
+        r = c.put("/settings", json=self._payload("mineru"))
+        assert r.status_code == 200
+        saved = json.loads(path.read_text())
+        assert saved["PIPELINE"] == {"extractor": "mineru"}
+
+    def test_put_invalid_extractor_value_returns_422(self, client):
+        c, _ = client
+        r = c.put("/settings", json=self._payload("nope"))
+        assert r.status_code == 422
+
     def test_invalid_policy_leaves_settings_file_unwritten(self, client):
         c, path = client
         c.put("/settings", json=self._payload("sometimes"))

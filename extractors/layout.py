@@ -8,6 +8,7 @@ the caption-first heuristic.
 from __future__ import annotations
 
 import io
+import warnings
 from dataclasses import dataclass
 
 import pymupdf
@@ -41,6 +42,7 @@ class LayoutAnalyser:
     def __init__(self) -> None:
         self._available = False
         self._predictor = None
+        self._load_error: str | None = None
         try:
             from surya.foundation import FoundationPredictor
             from surya.layout import LayoutPredictor
@@ -48,12 +50,30 @@ class LayoutAnalyser:
             _fp = FoundationPredictor(checkpoint=_s.LAYOUT_MODEL_CHECKPOINT)
             self._predictor = LayoutPredictor(_fp)
             self._available = True
-        except Exception:
-            pass
+        except Exception as e:
+            # Surface the degradation loudly instead of silently dropping to the
+            # heuristic figure path. A silent fallback hides dependency/version
+            # breakage (e.g. an incompatible transformers or pillow) — the lite
+            # path keeps "working" at lower quality and nobody notices. Capture
+            # the reason so the cause is diagnosable, not just the symptom.
+            self._load_error = f"{type(e).__name__}: {e}"
+            warnings.warn(
+                "Surya layout model unavailable — falling back to the "
+                "lower-quality heuristic figure-detection path. This usually "
+                "means a dependency/version mismatch in the extractor "
+                f"environment. Reason: {self._load_error}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
     @property
     def available(self) -> bool:
         return self._available
+
+    @property
+    def load_error(self) -> str | None:
+        """The captured reason Surya failed to load, or None if it loaded."""
+        return self._load_error
 
     def detect(self, page: pymupdf.Page) -> list[LayoutRegion]:
         """

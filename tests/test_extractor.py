@@ -422,6 +422,23 @@ class TestScannedPdfWarning:
 # ──────────────────────────────────────────────────────────────
 
 class TestCaptionFirstImageExtraction:
+    @pytest.fixture(autouse=True)
+    def _force_heuristic_path(self, monkeypatch):
+        # This scenario exercises the caption-first heuristic, which only runs
+        # when Surya is unavailable. Force Surya off so these tests are
+        # deterministic regardless of whether it loads in the environment —
+        # otherwise an active Surya silently takes a different path and the
+        # assertions become environment-dependent (which is how they broke when
+        # a transformers downgrade made Surya start loading).
+        class _NoSurya:
+            available = False
+            load_error = "disabled for heuristic-path test"
+
+            def detect(self, page):
+                return []
+
+        monkeypatch.setattr("extractors.pdf.LayoutAnalyser", _NoSurya)
+
     def test_raster_figure_extracted(self, tmp_path):
         """Existing raster-image figure still extracted with new caption-first path."""
         result = PDFExtractor().extract(_image_pdf(tmp_path))
