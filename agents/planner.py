@@ -12,13 +12,19 @@ class PlannerAgent(BaseAgent):
     name = "planner"
     output_schema = SlidePlan
 
+    def __init__(self, provider, max_slides: int):
+        super().__init__(provider)
+        self._max_slides = max_slides
+
     async def run(
         self,
         doc_map: DocumentMap,
         skeleton: GlobalSkeleton,
-        figure_catalog: list[dict] = [],
+        figure_catalog: list[dict] | None = None,
         scope: SectionEntry | None = None,
     ) -> SlidePlan:
+        if figure_catalog is None:
+            figure_catalog = []
         scope_instruction = ""
         if scope is not None:
             scope_instruction = (
@@ -33,8 +39,11 @@ class PlannerAgent(BaseAgent):
             skeleton=skeleton.as_context(),
             scope_instruction=scope_instruction,
             figure_catalog=_format_catalog(figure_catalog),
+            max_slides=self._max_slides,
         )
-        slide_plan = await self._call(prompt, SlidePlan)
+        slide_plan = await self._call(
+            prompt, SlidePlan, context={"max_slides": self._max_slides}
+        )
         return _validate_figure_ids(slide_plan, figure_catalog)
 
 

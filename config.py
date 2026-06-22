@@ -15,7 +15,7 @@ MODELS = {
 
 PIPELINE = {
     # ── Generation ──────────────────────────────────────────────────────────────
-    "max_slides":           16,      # hard cap on slides per deck
+    "max_slides":           16,      # max slides per deck — Planner cap (4–20)
     "writer_batch_size":    5,       # slides per Writer API call — stays within output token limits
     # ── Extraction ──────────────────────────────────────────────────────────────
     # extractor: which PDF extractor to use.

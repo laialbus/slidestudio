@@ -28,7 +28,8 @@ class StubProvider(BaseProvider):
         self.received_prompts: list[tuple[type, str]] = []
 
     async def complete_json(
-        self, prompt: str, schema: type[BaseModel], system: str = ""
+        self, prompt: str, schema: type[BaseModel], system: str = "",
+        context: dict | None = None,
     ) -> BaseModel:
         self.received_prompts.append((schema, prompt))
         idx = self._indices.get(schema, 0)

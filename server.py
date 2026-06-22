@@ -83,6 +83,18 @@ class JobState:
 
 _jobs: dict[str, JobState] = {}
 
+# Strong references to in-flight background jobs. asyncio only holds a weak
+# reference to a running task, so without this a pipeline job could be garbage
+# collected mid-run; each task removes itself once finished.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_tracked(coro) -> None:
+    """Run a coroutine in the background, holding a strong ref until it ends."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
 
 # ── Provider helpers (mirrors cli.py pattern) ─────────────────────────────────
 
@@ -136,7 +148,10 @@ def _build_agents(provider_key: str) -> dict:
     )
     return {
         "analyst": AnalystAgent(provider_instance),
-        "planner": PlannerAgent(provider_instance),
+        "planner": PlannerAgent(
+            provider_instance,
+            max_slides=config.PIPELINE["max_slides"],
+        ),
         "writer":  WriterAgent(
             provider_instance,
             writer_batch_size=config.PIPELINE["writer_batch_size"],
@@ -258,7 +273,7 @@ def create_app() -> FastAPI:
 
         job_id = str(uuid.uuid4())
         _jobs[job_id] = JobState(status="queued", pdf_path=pdf_path)
-        asyncio.create_task(_run_pipeline_job(job_id, pdf_path))
+        _spawn_tracked(_run_pipeline_job(job_id, pdf_path))
 
         return {"job_id": job_id}
 
@@ -293,7 +308,7 @@ def create_app() -> FastAPI:
         job.status = "queued"
         job.error = None
         job.progress = {}
-        asyncio.create_task(_run_pipeline_job(job_id, job.pdf_path, resume=True))
+        _spawn_tracked(_run_pipeline_job(job_id, job.pdf_path, resume=True))
         return {"job_id": job_id}
 
     @app.get("/library")

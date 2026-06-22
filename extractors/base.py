@@ -2,8 +2,8 @@
 Extraction abstraction.
 
 BaseExtractor is the single contract every extractor implements, mirroring
-BaseProvider and BaseExporter: the pipeline depends only on this interface and
-never knows which library produced the result.  The output models
+BaseProvider (and the planned BaseExporter): the pipeline depends only on this
+interface and never knows which library produced the result.  The output models
 (ExtractionResult and its parts) live here so they are shared by every
 implementation without importing any concrete extractor.
 

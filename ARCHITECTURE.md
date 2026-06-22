@@ -77,9 +77,9 @@ slidestudio/
 │   ├── config.py             # ProviderConfig dataclass (injected into provider instances)
 │   ├── errors.py             # CircuitOpenError, FatalAPIError
 │   ├── anthropic.py          # Anthropic SDK wrapper
-│   ├── openai.py             # OpenAI SDK wrapper
+│   ├── openai.py             # (planned) OpenAI wrapper — empty stub, not built
 │   ├── google.py             # Google Generative AI wrapper
-│   └── ollama.py             # Ollama local wrapper
+│   └── ollama.py             # (planned) Ollama wrapper — empty stub, not built
 │
 ├── utils/
 │   ├── rate_limiter.py       # asyncio.Semaphore — provider-aware concurrency cap
@@ -129,10 +129,10 @@ slidestudio/
 │   ├── analyst_skeleton.txt  analyst_chunk.txt  analyst_merge.txt
 │   ├── planner.txt  writer.txt  critic.txt  refiner.txt
 │
-├── exporters/
-│   ├── base.py
-│   ├── pptx.py
-│   ├── gui.py
+├── exporters/                # base/pptx/gui are planned, empty placeholder stubs
+│   ├── base.py               # (planned) BaseExporter interface — not implemented
+│   ├── pptx.py               # (planned) PPTX exporter — not implemented
+│   ├── gui.py                # (planned) GUI exporter — not implemented
 │   └── html/
 │       └── index.html        # Single-page viewer app (library, reel, TOC, settings)
 │

@@ -166,7 +166,7 @@ def run(
     )
     agents = {
         "analyst": AnalystAgent(provider_instance),
-        "planner": PlannerAgent(provider_instance),
+        "planner": PlannerAgent(provider_instance, max_slides=config.PIPELINE["max_slides"]),
         "writer":  WriterAgent(provider_instance, writer_batch_size=config.PIPELINE["writer_batch_size"]),
         "critic":  CriticAgent(provider_instance),
         "refiner": RefinerAgent(provider_instance),

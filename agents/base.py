@@ -56,11 +56,13 @@ class BaseAgent:
         prompt: str,
         schema: type[BaseModel],
         system: str = "",
+        context: dict | None = None,
     ) -> BaseModel:
         return await self.provider.complete_json(
             prompt=prompt,
             schema=schema,
             system=system,
+            context=context,
         )
 
     async def run(self, **context) -> BaseModel:

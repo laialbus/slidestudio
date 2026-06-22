@@ -40,10 +40,22 @@ class TestProviderAwareDefaults:
         sem = get_semaphore("ollama", user_override=4)
         assert sem._value == 4
 
-    def test_semaphore_is_singleton(self):
+    def test_same_budget_shared_across_providers(self):
+        # Single concurrency budget: providers with the same effective limit
+        # share one semaphore (anthropic and openai both default to 5).
         sem1 = get_semaphore("anthropic")
         sem2 = get_semaphore("openai")
         assert sem1 is sem2
+
+    def test_provider_switch_does_not_poison_budget(self):
+        # Regression for C3: a low-limit provider (ollama=1) must not pin the
+        # budget for a later higher-limit provider (anthropic=5). Before the
+        # fix, the first call's limit stuck for the whole process.
+        ollama_sem = get_semaphore("ollama")
+        assert ollama_sem._value == 1
+        anthropic_sem = get_semaphore("anthropic")
+        assert anthropic_sem._value == 5
+        assert anthropic_sem is not ollama_sem
 
     def test_reset_clears_singleton(self):
         sem1 = get_semaphore("anthropic")

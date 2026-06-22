@@ -53,6 +53,7 @@ class BaseProvider:
         prompt: str,
         schema: type[BaseModel],
         system: str = "",
+        context: dict | None = None,
     ) -> BaseModel:
         cb = get_circuit_breaker()
         cb.check(self.config.circuit_breaker_threshold, self.config.circuit_breaker_cooldown)
@@ -60,7 +61,9 @@ class BaseProvider:
         semaphore = get_semaphore(self.name, self.config.max_concurrent)
         async with semaphore:
             try:
-                result = await self._call_with_backoff(prompt, schema, system)
+                result = await self._call_with_backoff(
+                    prompt, schema, system, context
+                )
                 cb.record_success()
                 return result
             except (RateLimitError, ServerError):
@@ -72,6 +75,7 @@ class BaseProvider:
         prompt: str,
         schema: type[BaseModel],
         system: str,
+        context: dict | None = None,
     ) -> BaseModel:
         messages = [{"role": "user", "content": prompt}]
 
@@ -132,7 +136,7 @@ class BaseProvider:
                         continue
 
             try:
-                return schema.model_validate(data)
+                return schema.model_validate(data, context=context)
             except ValidationError as e:
                 if attempt == self.config.max_format_retries:
                     raise RuntimeError(

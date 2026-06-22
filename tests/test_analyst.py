@@ -51,6 +51,7 @@ class StubProvider(BaseProvider):
         prompt: str,
         schema: type[BaseModel],
         system: str = "",
+        context: dict | None = None,
     ) -> BaseModel:
         self.call_log.append(schema)
         idx = self._indices.get(schema, 0)

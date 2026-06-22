@@ -135,7 +135,7 @@ class StubProvider(BaseProvider):
         self._indices: dict[type, int] = {}
         self.call_log: list[type] = []
 
-    async def complete_json(self, prompt, schema, system=""):
+    async def complete_json(self, prompt, schema, system="", context=None):
         self.call_log.append(schema)
         idx = self._indices.get(schema, 0)
         self._indices[schema] = idx + 1

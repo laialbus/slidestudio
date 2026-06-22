@@ -12,20 +12,36 @@ PROVIDER_DEFAULTS: dict[str, int] = {
 }
 
 _semaphore: asyncio.Semaphore | None = None
+_semaphore_limit: int | None = None
 
 
-def get_semaphore(provider: str, user_override: int | None = None) -> asyncio.Semaphore:
-    global _semaphore
-    if _semaphore is None:
-        limit = user_override if user_override is not None \
-                else PROVIDER_DEFAULTS.get(provider, 5)
+def get_semaphore(
+    provider: str, user_override: int | None = None
+) -> asyncio.Semaphore:
+    """Return the shared concurrency semaphore for the active provider.
+
+    Per the architecture, there is a single concurrency budget shared across
+    all providers — one semaphore, never one-per-provider. The budget is the
+    provider's limit (or the user's override). The semaphore is rebuilt only
+    when that effective limit changes, so switching providers at runtime (e.g.
+    the server's PUT /settings, ollama -> a cloud provider) re-pins the budget
+    to the new limit instead of staying stuck on whichever provider ran first.
+    """
+    global _semaphore, _semaphore_limit
+    limit = (
+        user_override if user_override is not None
+        else PROVIDER_DEFAULTS.get(provider, 5)
+    )
+    if _semaphore is None or _semaphore_limit != limit:
         _semaphore = asyncio.Semaphore(limit)
+        _semaphore_limit = limit
     return _semaphore
 
 
 def reset_semaphore() -> None:
-    global _semaphore
+    global _semaphore, _semaphore_limit
     _semaphore = None
+    _semaphore_limit = None
 
 
 class CircuitBreaker:

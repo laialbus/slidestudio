@@ -100,15 +100,14 @@ class MineruExtractor(BaseExtractor):
 
         # TOC / title / page count come from pymupdf on the original PDF — the
         # same zero-cost metadata path the lite extractor uses.
-        doc = pymupdf.open(file_path)
-        page_count = doc.page_count
-        toc_items = [
-            TocItem(level=level, heading=title, page=page)
-            for level, title, page in doc.get_toc()
-            if title and title.strip()
-        ]
-        pdf_title = _extract_pdf_title(doc)
-        doc.close()
+        with pymupdf.open(file_path) as doc:
+            page_count = doc.page_count
+            toc_items = [
+                TocItem(level=level, heading=title, page=page)
+                for level, title, page in doc.get_toc()
+                if title and title.strip()
+            ]
+            pdf_title = _extract_pdf_title(doc)
 
         char_count = sum(len(c) for c in chunks)
         return ExtractionResult(

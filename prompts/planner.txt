@@ -14,7 +14,7 @@ Design a slide plan that covers the key concepts, arguments, and insights from t
 
 Return a JSON object with:
 - title: concise deck title (max 60 characters)
-- total_slides: number of slides planned (between 4 and 20 inclusive)
+- total_slides: number of slides planned (between 4 and $max_slides inclusive)
 - slides: list of PlannedSlide objects, each with:
   - index: 1-based slide number
   - tag: one of "Introduction", "Key Concept", "Definition", "Example", "Insight", "Data Point", "Takeaway", "Summary"

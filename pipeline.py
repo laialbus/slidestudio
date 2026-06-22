@@ -1,6 +1,7 @@
 import asyncio
 import json
 import shutil
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -201,7 +202,7 @@ async def run_single_deck(
     max_review_cycles: int,
     debug: bool,
     output_dir: Path | str,
-    figure_catalog: list[dict] = [],
+    figure_catalog: list[dict] | None = None,
     scope: SectionEntry | None = None,
     checkpoint: Checkpoint | None = None,
     _write: bool = True,
@@ -216,6 +217,8 @@ async def run_single_deck(
     run_multi_deck, delegates all disk I/O to write_deck_index). Debug
     intermediates are still written when debug=True.
     """
+    if figure_catalog is None:
+        figure_catalog = []
     ck = checkpoint
 
     # If the final output is already checkpointed, skip all agents.
@@ -390,12 +393,14 @@ async def run_multi_deck(
     max_review_cycles: int,
     debug: bool,
     output_dir: Path | str,
-    figure_catalog: list[dict] = [],
+    figure_catalog: list[dict] | None = None,
     checkpoint: Checkpoint | None = None,
     on_progress: ProgressCallback = None,
     output_stem: str | None = None,
     doc_hash: str = "",
 ) -> tuple[DeckIndex, list[str], Path]:
+    if figure_catalog is None:
+        figure_catalog = []
     chapters = [s for s in skeleton.sections if s.level == 1]
     total = len(chapters)
     completed_count = [0]
@@ -424,17 +429,31 @@ async def run_multi_deck(
     tasks = [_run_chapter(chapter) for chapter in chapters]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    decks_data = [
-        (chapter, result[0])
-        for chapter, result in zip(chapters, results)
-        if not isinstance(result, Exception)
-    ]
+    # A chapter that raised is kept out of the deck index, but must never vanish
+    # silently. Continuing on partial failure is intentional (TestBlastRadius:
+    # one chapter must not crash the run), so we report each failure loudly
+    # instead: a RuntimeWarning capturing the reason (mirrors the extractor
+    # fallbacks) plus an entry in the returned issues list, which the CLI prints
+    # under "Completed with warnings".
+    decks_data = []
+    issues: list[str] = []
+    for chapter, result in zip(chapters, results):
+        if not isinstance(result, Exception):
+            decks_data.append((chapter, result[0]))
+            continue
+        reason = f"{type(result).__name__}: {result}"
+        message = (
+            f"Chapter '{chapter.heading}' was skipped after it "
+            f"failed: {reason}"
+        )
+        warnings.warn(message, RuntimeWarning, stacklevel=2)
+        issues.append(message)
 
     deck_index, index_path = write_deck_index(
         title, decks_data, images, agents, output_dir,
         output_stem=output_stem, doc_hash=doc_hash,
     )
-    return deck_index, [], index_path
+    return deck_index, issues, index_path
 
 
 def _cleanup_stale_output(
@@ -500,12 +519,14 @@ async def route(
     debug: bool,
     output_dir: Path | str,
     duplicate_policy: str,
-    figure_catalog: list[dict] = [],
+    figure_catalog: list[dict] | None = None,
     checkpoint: Checkpoint | None = None,
     on_progress: ProgressCallback = None,
     output_stem: str | None = None,
     doc_hash: str = "",
 ):
+    if figure_catalog is None:
+        figure_catalog = []
     chapter_count = sum(1 for s in skeleton.sections if s.level == 1)
     is_multi = (chapter_count > multi_deck_chapter_threshold) and (total_chars > multi_deck_length_threshold)
 

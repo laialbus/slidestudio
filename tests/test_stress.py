@@ -34,7 +34,8 @@ class StubProvider(BaseProvider):
         self.call_count = 0
 
     async def complete_json(
-        self, prompt: str, schema: type[BaseModel], system: str = ""
+        self, prompt: str, schema: type[BaseModel], system: str = "",
+        context: dict | None = None,
     ) -> BaseModel:
         self.call_count += 1
 
@@ -134,7 +135,7 @@ class TestKillSwitch:
     def test_exits_with_non_empty_unresolved(self, tmp_path):
         stub = StubProvider()
         agents = {
-            "planner": PlannerAgent(stub),
+            "planner": PlannerAgent(stub, max_slides=20),
             "writer":  WriterAgent(stub, writer_batch_size=4),
             "critic":  CriticAgent(stub),
             "refiner": RefinerAgent(stub),
@@ -158,7 +159,7 @@ class TestKillSwitch:
     def test_unresolved_contains_strings(self, tmp_path):
         stub = StubProvider()
         agents = {
-            "planner": PlannerAgent(stub),
+            "planner": PlannerAgent(stub, max_slides=20),
             "writer":  WriterAgent(stub, writer_batch_size=4),
             "critic":  CriticAgent(stub),
             "refiner": RefinerAgent(stub),

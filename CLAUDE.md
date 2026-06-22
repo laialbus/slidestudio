@@ -14,7 +14,10 @@ See ARCHITECTURE.md for the full design. Key rules:
 - The semaphore in utils/rate_limiter.py is the single concurrency budget for all providers.
 - The pipeline always ends with SlidesFinal or DeckIndex in memory
 - Exporters consume pipeline output — they never call agents or providers
-- To add a new output format, add a file in exporters/ that inherits BaseExporter
+- To add a new output format, add a file in exporters/ that inherits
+  BaseExporter. NOTE: `BaseExporter` and `exporters/{base,pptx,gui}.py` are
+  reserved, empty placeholder stubs — not implemented yet. The only live
+  exporter today is the static viewer in `exporters/html/`.
 
 ## Entry points
 - `python cli.py paper.pdf` — run the full pipeline

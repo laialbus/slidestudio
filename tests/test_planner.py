@@ -28,11 +28,14 @@ class StubProvider(BaseProvider):
         self._responses   = {k: list(v) for k, v in responses.items()}
         self._indices:    dict[type, int] = {}
         self.received_prompts: list[tuple[type, str]] = []
+        self.received_contexts: list[tuple[type, dict | None]] = []
 
     async def complete_json(
-        self, prompt: str, schema: type[BaseModel], system: str = ""
+        self, prompt: str, schema: type[BaseModel], system: str = "",
+        context: dict | None = None,
     ) -> BaseModel:
         self.received_prompts.append((schema, prompt))
+        self.received_contexts.append((schema, context))
         idx = self._indices.get(schema, 0)
         self._indices[schema] = idx + 1
         items = self._responses[schema]
@@ -117,7 +120,7 @@ def _run(coro):
 class TestPlannerNoScope:
     def _make_agent(self, plan: SlidePlan | None = None) -> tuple[PlannerAgent, StubProvider]:
         stub  = StubProvider({SlidePlan: [plan or _slide_plan()]})
-        agent = PlannerAgent(stub)
+        agent = PlannerAgent(stub, max_slides=20)
         return agent, stub
 
     def test_returns_slide_plan_instance(self):
@@ -137,6 +140,20 @@ class TestPlannerNoScope:
         _, prompt = stub.received_prompts[0]
         # Empty scope_instruction → the placeholder is substituted with ""
         assert "Generate slides ONLY for" not in prompt
+
+    def test_passes_max_slides_as_validation_context(self):
+        # S2: the configured cap is threaded to the schema via context.
+        agent, stub = self._make_agent()  # built with max_slides=20
+        _run(agent.run(_doc_map(), _skeleton(), []))
+        schema, ctx = stub.received_contexts[0]
+        assert schema is SlidePlan
+        assert ctx == {"max_slides": 20}
+
+    def test_max_slides_rendered_in_prompt(self):
+        agent, stub = self._make_agent()  # built with max_slides=20
+        _run(agent.run(_doc_map(), _skeleton(), []))
+        _, prompt = stub.received_prompts[0]
+        assert "between 4 and 20 inclusive" in prompt
 
     def test_doc_map_title_in_prompt(self):
         agent, stub = self._make_agent()
@@ -190,7 +207,7 @@ class TestPlannerWithScope:
                 _slide(i + 1, "Model Architecture") for i in range(4)
             ]
         stub  = StubProvider({SlidePlan: [_slide_plan(slides)]})
-        agent = PlannerAgent(stub)
+        agent = PlannerAgent(stub, max_slides=20)
         return agent, stub
 
     def test_returns_slide_plan(self):

@@ -4,6 +4,8 @@ Milestone 6 — cost_estimator tests.
 No real API calls, no external tokenizer libraries.
 """
 
+import pytest
+
 from utils.cost_estimator import (
     CHARS_PER_TOKEN,
     PRICING,
@@ -77,11 +79,35 @@ class TestCalculateCost:
         assert cost == 0.0
 
     def test_unknown_provider_returns_zero(self):
-        cost = calculate_cost(1_000_000, 1_000_000, "unknown_provider", "some-model")
+        with pytest.warns(RuntimeWarning):
+            cost = calculate_cost(
+                1_000_000, 1_000_000, "unknown_provider", "some-model"
+            )
         assert cost == 0.0
 
     def test_unknown_model_returns_zero(self):
-        cost = calculate_cost(1_000_000, 0, "anthropic", "nonexistent-model")
+        with pytest.warns(RuntimeWarning):
+            cost = calculate_cost(1_000_000, 0, "anthropic", "nonexistent-model")
+        assert cost == 0.0
+
+    def test_unknown_pricing_warns_loudly(self):
+        # C5: an unpriced provider/model must warn, not silently report $0.
+        with pytest.warns(RuntimeWarning, match="No pricing table"):
+            calculate_cost(1_000, 1_000, "unknown_provider", "some-model")
+
+    def test_google_gemini_flash_input_cost(self):
+        # 1M input tokens at $0.50/M
+        cost = calculate_cost(1_000_000, 0, "google", "gemini-3-flash-preview")
+        assert abs(cost - 0.50) < 1e-9
+
+    def test_google_gemini_flash_output_cost(self):
+        # 1M output tokens at $3.00/M
+        cost = calculate_cost(0, 1_000_000, "google", "gemini-3-flash-preview")
+        assert abs(cost - 3.00) < 1e-9
+
+    def test_google_fast_gemma_is_free(self):
+        # Gemma 4 is free; a known $0 must NOT warn (unlike unknown pricing).
+        cost = calculate_cost(1_000_000, 1_000_000, "google-fast", "gemma-4-31b-it")
         assert cost == 0.0
 
     def test_combined_input_and_output(self):
@@ -152,7 +178,9 @@ class TestAnalyzePdfCost:
         assert result["estimated_cost"] == 0.0
 
     def test_pricing_dict_has_expected_providers(self):
-        assert "anthropic" in PRICING
-        assert "openai"    in PRICING
-        assert "groq"      in PRICING
-        assert "ollama"    in PRICING
+        assert "anthropic"   in PRICING
+        assert "openai"      in PRICING
+        assert "groq"        in PRICING
+        assert "ollama"      in PRICING
+        assert "google"      in PRICING
+        assert "google-fast" in PRICING

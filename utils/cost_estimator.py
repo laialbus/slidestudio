@@ -1,5 +1,9 @@
+import warnings
+
 CHARS_PER_TOKEN = 4
 
+# Per-1M-token USD prices. Sources: provider pricing pages. Google rates are the
+# standard-tier text prices from ai.google.dev/gemini-api/docs/pricing.
 PRICING: dict[str, dict[str, dict[str, float]]] = {
     "anthropic": {
         "claude-sonnet-4-20250514": {"input": 3.00,  "output": 15.00},
@@ -14,6 +18,13 @@ PRICING: dict[str, dict[str, dict[str, float]]] = {
     },
     "ollama": {
         "*": {"input": 0.00, "output": 0.00},
+    },
+    "google": {
+        "gemini-3-flash-preview": {"input": 0.50, "output": 3.00},
+    },
+    "google-fast": {
+        # Gemma 4 is free of charge on the Gemini API.
+        "gemma-4-31b-it": {"input": 0.00, "output": 0.00},
     },
 }
 
@@ -31,8 +42,17 @@ def calculate_cost(
     prices = (
         PRICING.get(provider, {}).get(model)
         or PRICING.get(provider, {}).get("*")
-        or {"input": 0.0, "output": 0.0}
     )
+    if prices is None:
+        # No pricing entry: warn loudly rather than present $0 as a real
+        # figure, since the point of an estimate is a trustworthy number.
+        warnings.warn(
+            f"No pricing table for {provider}/{model}; "
+            f"cost estimate unavailable (reporting $0).",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        prices = {"input": 0.0, "output": 0.0}
     return (
         input_tokens  / 1_000_000 * prices["input"]
         + output_tokens / 1_000_000 * prices["output"]

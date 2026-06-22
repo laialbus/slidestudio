@@ -84,49 +84,54 @@ class PDFExtractor(BaseExtractor):
         return "pymupdf4llm"
 
     def extract(self, file_path: str) -> ExtractionResult:
-        doc = pymupdf.open(file_path)
-        page_count = doc.page_count
+        with pymupdf.open(file_path) as doc:
+            page_count = doc.page_count
 
-        # TOC items from the PDF's embedded table of contents (zero API cost)
-        raw_toc  = doc.get_toc()
-        toc_items = [
-            TocItem(level=level, heading=title, page=page)
-            for level, title, page in raw_toc
-            if title and title.strip()
-        ]
+            # TOC items from the PDF's embedded table of contents (no API cost)
+            raw_toc  = doc.get_toc()
+            toc_items = [
+                TocItem(level=level, heading=title, page=page)
+                for level, title, page in raw_toc
+                if title and title.strip()
+            ]
 
-        # Parse once with the layout engine — gives markdown + OCR status
-        # without reopening the file.  header=False/footer=False strips
-        # repeating page decorations that pollute every chunk.
-        parsed   = _dl.parse_document(doc)
-        ocr_used = parsed.use_ocr != _dl.OCRMode.NEVER
-        md_layout = parsed.to_markdown(header=False, footer=False)
+            # Parse once with the layout engine — gives markdown + OCR status
+            # without reopening the file.  header=False/footer=False strips
+            # repeating page decorations that pollute every chunk.
+            parsed   = _dl.parse_document(doc)
+            ocr_used = parsed.use_ocr != _dl.OCRMode.NEVER
+            md_layout = parsed.to_markdown(header=False, footer=False)
 
-        # Fall back to the RAG extractor when the layout engine captures
-        # less than 50 % of what it would produce (e.g. simple
-        # programmatically-created PDFs that have no complex layout).
-        # Guard against RAG crashes on tables with empty cell lists (pymupdf bug).
-        try:
-            md_rag = _rag.to_markdown(doc)
-        except Exception:
-            md_rag = ""
-        md = md_layout if len(md_layout.strip()) >= 0.5 * max(len(md_rag.strip()), 1) else md_rag
-
-        # Warn (not crash) on suspiciously short extraction (possible scanned PDF)
-        if len(md.strip()) < 200 and page_count > 1:
-            warnings.warn(
-                f"Extracted only {len(md.strip())} characters from {page_count} "
-                "pages. The PDF may be scanned. Install Tesseract OCR for better "
-                "results: https://tesseract-ocr.github.io/tessdoc/Installation.html",
-                UserWarning,
-                stacklevel=2,
+            # Fall back to the RAG extractor when the layout engine captures
+            # less than 50 % of what it would produce (e.g. simple
+            # programmatically-created PDFs that have no complex layout).
+            # Guard against RAG crashes on tables with empty cell lists
+            # (pymupdf bug).
+            try:
+                md_rag = _rag.to_markdown(doc)
+            except Exception:
+                md_rag = ""
+            md = (
+                md_layout
+                if len(md_layout.strip()) >= 0.5 * max(len(md_rag.strip()), 1)
+                else md_rag
             )
 
-        # Extract images as base64 data URIs
-        images = _extract_images(doc, self._layout)
+            # Warn (not crash) on short extraction (possible scanned PDF)
+            if len(md.strip()) < 200 and page_count > 1:
+                warnings.warn(
+                    f"Extracted only {len(md.strip())} characters from "
+                    f"{page_count} pages. The PDF may be scanned. Install "
+                    "Tesseract OCR for better results: "
+                    "https://tesseract-ocr.github.io/tessdoc/Installation.html",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
-        pdf_title = _extract_pdf_title(doc)
-        doc.close()
+            # Extract images as base64 data URIs
+            images = _extract_images(doc, self._layout)
+
+            pdf_title = _extract_pdf_title(doc)
 
         # Validate and clean malformed Markdown tables before chunking
         md = _clean_tables(md)

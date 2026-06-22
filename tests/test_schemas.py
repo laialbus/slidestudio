@@ -161,6 +161,43 @@ class TestSlidePlan:
         plan = SlidePlan(title="Short title", total_slides=4, slides=[])
         assert plan.total_slides == 4
 
+    def test_context_max_slides_caps_total_slides(self):
+        # S2: config-driven cap is passed via validation context.
+        with pytest.raises(ValidationError):
+            SlidePlan.model_validate(
+                {"title": "T", "total_slides": 10, "slides": []},
+                context={"max_slides": 8},
+            )
+
+    def test_context_max_slides_within_cap_ok(self):
+        plan = SlidePlan.model_validate(
+            {"title": "T", "total_slides": 6, "slides": []},
+            context={"max_slides": 8},
+        )
+        assert plan.total_slides == 6
+
+    def test_no_context_keeps_static_bounds(self):
+        # Without context, only the static ge/le bounds apply (le=20).
+        plan = SlidePlan(title="T", total_slides=20, slides=[])
+        assert plan.total_slides == 20
+
+    def test_context_caps_actual_slide_count(self):
+        # The cap also rejects a slides list longer than max_slides, even
+        # when the declared total_slides is within the cap. total_slides=5
+        # (== cap) isolates the slide-count branch from the total_slides one.
+        slides = [
+            PlannedSlide(
+                index=i + 1, tag="Key Concept", source_section="S",
+                intention="x", emphasis="y", chunk_indices=[1],
+            )
+            for i in range(6)
+        ]
+        with pytest.raises(ValidationError):
+            SlidePlan.model_validate(
+                {"title": "T", "total_slides": 5, "slides": slides},
+                context={"max_slides": 5},
+            )
+
 
 # ──────────────────────────────────────────────────────────────
 # DocumentMap field constraints

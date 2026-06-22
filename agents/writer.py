@@ -1,5 +1,4 @@
 import asyncio
-from pathlib import Path
 from string import Template
 
 from schemas.document_map import DocumentMap
@@ -47,7 +46,7 @@ class WriterAgent(BaseAgent):
         completed_slides: SlidesDraft,
         summary_index: int,
     ) -> SlidesDraft:
-        summary_template = Path("prompts/writer_summary.txt").read_text()
+        summary_template = self._load_named_prompt("writer_summary")
         prompt = Template(summary_template).safe_substitute(
             completed_slides=completed_slides.model_dump_json(indent=2),
             summary_index=summary_index,
